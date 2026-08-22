@@ -4,6 +4,7 @@ import { CandidateDecisionSchema, DebateMessageSchema, ModeratorResultSchema } f
 import { FinalistScoreSchema, PlaceCandidateSchema, PlaceFactPackSchema } from "@/lib/schemas/place";
 import { PreferenceDeltaSchema, UserPreferenceSchema } from "@/lib/schemas/preference";
 import { UserIntentSchema } from "@/lib/schemas/intent";
+import { IntentProfileSchema } from "@/lib/schemas/intent";
 import { SearchPlanSchema } from "@/lib/schemas/search-plan";
 import { CoordinatesSchema, LocationContextSchema, WeatherContextSchema } from "@/lib/schemas/location";
 
@@ -16,6 +17,8 @@ export const DebateStateSchema = new StateSchema({
   originalPreference: UserPreferenceSchema.optional(),
   currentPreference: UserPreferenceSchema.optional(),
   userIntent: UserIntentSchema.optional(),
+  intentProfile: IntentProfileSchema.optional(),
+  needsClarification: z.boolean().default(false),
   searchPlan: SearchPlanSchema.optional(),
   interventionText: z.string().default(""),
   preferenceDelta: PreferenceDeltaSchema.optional(),

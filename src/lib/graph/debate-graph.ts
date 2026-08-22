@@ -6,6 +6,8 @@ import { DebateStateSchema } from "./state";
 
 export const DEBATE_GRAPH_NODES = [
   "parseIntent",
+  "completenessCheck",
+  "clarificationInterrupt",
   "createSearchPlan",
   "resolveLocation",
   "retrievePlaces",
@@ -41,6 +43,8 @@ export function createDebateGraph(
 
   return new StateGraph(DebateStateSchema)
     .addNode("parseIntent", nodes.parseIntent)
+    .addNode("completenessCheck", nodes.completenessCheck)
+    .addNode("clarificationInterrupt", nodes.clarificationInterrupt)
     .addNode("createSearchPlan", nodes.createSearchPlan)
     .addNode("resolveLocation", nodes.resolveLocation)
     .addNode("retrievePlaces", nodes.retrievePlaces)
@@ -65,7 +69,9 @@ export function createDebateGraph(
     .addNode("rebuttalRound", nodes.rebuttalRound)
     .addNode("moderatorSummary", nodes.moderatorSummary)
     .addEdge(START, "parseIntent")
-    .addEdge("parseIntent", "createSearchPlan")
+    .addEdge("parseIntent", "completenessCheck")
+    .addConditionalEdges("completenessCheck", (state) => state.needsClarification ? "clarificationInterrupt" : "createSearchPlan")
+    .addEdge("clarificationInterrupt", "createSearchPlan")
     .addEdge("createSearchPlan", "resolveLocation")
     .addEdge("resolveLocation", "retrievePlaces")
     .addEdge("retrievePlaces", "filterPlaces")
@@ -74,7 +80,9 @@ export function createDebateGraph(
     .addEdge("candidateQualityCheck", "enrichRoutesAndWeather")
     .addEdge("enrichRoutesAndWeather", "finalRank")
     .addEdge("finalRank", "buildFactPacks")
-    .addEdge("buildFactPacks", "openingRound")
+    // Debate nodes remain available, but are deliberately disconnected while
+    // candidate and intent quality are being validated without Debate LLM cost.
+    .addEdge("buildFactPacks", END)
     .addEdge("openingRound", "attackRound")
     .addEdge("attackRound", "candidateDecisionGate")
     .addConditionalEdges("candidateDecisionGate", (state) => state.candidateDecision?.actionType === "eliminate_candidate" ? "eliminateCandidate" : "refreshCandidates")
@@ -94,10 +102,10 @@ export function createDebateGraph(
 
 export type DebateRuntime = { graph: ReturnType<typeof createDebateGraph> };
 export type AwaitingDebate = Pick<DebateResult,
-  "originalQuery" | "userPreference" | "originalPreference" | "currentPreference" | "userIntent" | "searchPlan" | "location" | "weather" | "rawPois" | "filteredPois" | "rankedCandidates" | "selectedCandidates" | "enrichedCandidates" | "factPacks" | "openingMessages" | "attackMessages" | "requiredEvidenceTypes" | "missingEvidenceTypes" | "beforeInterventionScores"
+  "originalQuery" | "userPreference" | "originalPreference" | "currentPreference" | "intentProfile" | "userIntent" | "searchPlan" | "location" | "weather" | "rawPois" | "filteredPois" | "rankedCandidates" | "selectedCandidates" | "enrichedCandidates" | "factPacks" | "openingMessages" | "attackMessages" | "requiredEvidenceTypes" | "missingEvidenceTypes" | "beforeInterventionScores"
 > & { rebuttalMessages: []; interventionText: ""; preferenceDelta?: undefined; moderatorResult?: undefined };
 export type AwaitingIntervention = {
-  status: "awaiting_intervention";
+  status: "awaiting_clarification";
   threadId: string;
   debate: AwaitingDebate;
   interrupt: unknown;
@@ -109,22 +117,22 @@ export async function startDebate(
   originalQuery: string,
   gpsCoordinates?: { longitude: number; latitude: number },
   runtime: DebateRuntime = getServerDebateRuntime(),
-): Promise<AwaitingIntervention> {
+): Promise<AwaitingIntervention | { status: "candidates_ready"; threadId: string; debate: DebateResult }> {
   const threadId = newThreadId();
   const output = await runtime.graph.invoke({ originalQuery, gpsCoordinates }, { configurable: { thread_id: threadId } });
-  if (!isInterrupted(output)) throw new Error("Debate completed without the required user intervention checkpoint.");
+  if (!isInterrupted(output)) return { status: "candidates_ready", threadId, debate: DebateResultSchema.parse(output) };
   const debate = output as unknown as AwaitingIntervention["debate"];
-  return { status: "awaiting_intervention", threadId, debate, interrupt: output.__interrupt__ };
+  return { status: "awaiting_clarification", threadId, debate, interrupt: output.__interrupt__ };
 }
 
 export async function resumeDebate(
   threadId: string,
   action: unknown,
   runtime: DebateRuntime = getServerDebateRuntime(),
-): Promise<{ status: "completed" | "awaiting_final_selection"; debate: DebateResult | unknown }> {
+): Promise<{ status: "candidates_ready" | "awaiting_clarification"; debate: DebateResult | unknown }> {
   const output = await runtime.graph.invoke(new Command({ resume: action }), { configurable: { thread_id: threadId } });
-  if (isInterrupted(output)) return { status: "awaiting_final_selection", debate: output };
-  return { status: "completed", debate: DebateResultSchema.parse(output) };
+  if (isInterrupted(output)) return { status: "awaiting_clarification", debate: output };
+  return { status: "candidates_ready", debate: DebateResultSchema.parse(output) };
 }
 
 let serverRuntime: DebateRuntime | undefined;

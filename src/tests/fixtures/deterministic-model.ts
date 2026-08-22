@@ -31,14 +31,16 @@ export const deterministicModel: StructuredModel = {
         : "attack-nanjing-museum-xuanwu-lake";
     const attackerPoiId = responseToAttackId.split("-").slice(1, -2).join("-");
     const values: Record<string, unknown> = {
-      intent_interpretation: {
-        intent: {
-          primaryGoal: userText.includes("健身") ? "fitness" : userText.includes("逛街") ? "shopping" : userText.includes("学习") ? "study" : "leisure",
-          requiredCategories: userText.includes("健身") ? ["fitness"] : userText.includes("逛街") ? ["shopping"] : userText.includes("学习") ? ["bookstore", "cultural", "cafe"] : ["park", "museum", "bookstore"],
-          excludedCategories: [],
-          searchTerms: ["测试"],
-          strictCategoryMatch: !prompt.includes("想出去走走"),
-          summary: "测试意图",
+      intent_profile: {
+        intentProfile: {
+          goal: userText.includes("健身") ? "健身" : "休闲",
+          experience: userText.includes("室内") ? "indoor_walk" : userText.includes("健身") ? "fitness" : "leisure",
+          constraints: [
+            ...(userText.includes("室内") ? ["indoor"] : []),
+            ...(userText.includes("不花钱") ? ["no_cost"] : []),
+          ],
+          avoid: userText.includes("咖啡") ? ["cafe"] : [],
+          missing_slots: userText.includes("室内逛") && !userText.includes("不花钱") ? ["exploration_type"] : [],
         },
         preference: {
           activityLevel: "low",
@@ -48,6 +50,13 @@ export const deterministicModel: StructuredModel = {
           budgetLevel: "medium",
           companions: "solo",
           freeTextConstraints: ["不要太累", "有点意思"],
+        },
+      },
+      intent_profile_update: {
+        intentProfile: { goal: "休闲", experience: "indoor_walk", constraints: ["indoor"], avoid: [], missing_slots: [] },
+        preference: {
+          activityLevel: "low", indoorPreference: 0.8, naturePreference: 0.4, culturePreference: 0.7,
+          budgetLevel: "flexible", companions: "solo", freeTextConstraints: [],
         },
       },
       preference_update: {

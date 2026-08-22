@@ -1,4 +1,4 @@
-import { interpretIntent, updatePreferenceFromIntervention } from "@/lib/agents/intent-agent";
+import { interpretIntent, updateIntentFromClarification, updatePreferenceFromIntervention } from "@/lib/agents/intent-agent";
 import { moderateDebate } from "@/lib/agents/moderator-agent";
 import { createPlaceAgent } from "@/lib/agents/place-agent-factory";
 import type { StructuredModel } from "@/lib/agents/model-factory";
@@ -16,6 +16,7 @@ import type { DebateStateSchema } from "./state";
 import { interrupt } from "@langchain/langgraph";
 import { UserPreferenceSchema, type UserPreference } from "@/lib/schemas/preference";
 import { UserIntentSchema, type UserIntent } from "@/lib/schemas/intent";
+import { IntentProfileSchema, type IntentProfile } from "@/lib/schemas/intent";
 import type { SearchPlan } from "@/lib/schemas/search-plan";
 
 function requirePreference(state: typeof DebateStateSchema.State): UserPreference {
@@ -29,6 +30,10 @@ function requireOriginalPreference(state: typeof DebateStateSchema.State): UserP
 function requireIntent(state: typeof DebateStateSchema.State): UserIntent {
   if (!state.userIntent) throw new Error("User intent has not been parsed.");
   return UserIntentSchema.parse(state.userIntent);
+}
+function requireIntentProfile(state: typeof DebateStateSchema.State): IntentProfile {
+  if (!state.intentProfile) throw new Error("Intent profile has not been extracted.");
+  return IntentProfileSchema.parse(state.intentProfile);
 }
 function requireSearchPlan(state: typeof DebateStateSchema.State): SearchPlan {
   if (!state.searchPlan) throw new Error("AMap search plan has not been created.");
@@ -52,11 +57,28 @@ export function createDebateNodes(
 ) {
   return {
     parseIntent: async (state: typeof DebateStateSchema.State) => {
-      const { intent: userIntent, preference: userPreference } = await interpretIntent(state.originalQuery, model);
-      return { userIntent, userPreference, originalPreference: userPreference, currentPreference: userPreference };
+      const { intentProfile, preference: userPreference } = await interpretIntent(state.originalQuery, model);
+      return { intentProfile, userPreference, originalPreference: userPreference, currentPreference: userPreference };
     },
 
-    createSearchPlan: (state: typeof DebateStateSchema.State) => ({ searchPlan: createSearchPlan(requireIntent(state)) }),
+    completenessCheck: (state: typeof DebateStateSchema.State) => ({ needsClarification: requireIntentProfile(state).missing_slots.length > 0 }),
+
+    clarificationInterrupt: async (state: typeof DebateStateSchema.State) => {
+      const profile = requireIntentProfile(state);
+      const slots = profile.missing_slots;
+      const question = slots.includes("exploration_type")
+        ? "室内逛逛更偏向：A 商场/商业空间 B 展览馆/博物馆 C 都可以，直接推荐"
+        : `为了更贴近你的需求，请补充：${slots.join("、")}。也可以选择“直接推荐”。`;
+      const resumed = interrupt({ intentProfile: profile, missingSlots: slots, question, options: slots.includes("exploration_type") ? ["商场/商业空间", "展览馆/博物馆", "都可以，直接推荐"] : ["直接推荐"] }) as { answer?: unknown } | string;
+      const answer = typeof resumed === "string" ? resumed : typeof resumed?.answer === "string" ? resumed.answer : "直接推荐";
+      const { intentProfile, preference } = await updateIntentFromClarification(state.originalQuery, profile, answer, model);
+      return { intentProfile, userPreference: preference, currentPreference: preference, needsClarification: false };
+    },
+
+    createSearchPlan: (state: typeof DebateStateSchema.State) => {
+      const searchPlan = createSearchPlan(requireIntentProfile(state));
+      return { searchPlan, userIntent: searchPlan.intent };
+    },
 
     resolveLocation: async (state: typeof DebateStateSchema.State) => ({ location: await contextDataSource.resolveLocation(state.gpsCoordinates) }),
 

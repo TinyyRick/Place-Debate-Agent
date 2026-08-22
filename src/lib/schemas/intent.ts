@@ -17,4 +17,19 @@ export const IntentInterpretationSchema = z.object({
   preference: UserPreferenceSchema,
 });
 
+/** User language, deliberately separate from POI taxonomy and retrieval rules. */
+export const IntentProfileSchema = z.object({
+  goal: z.string().min(1).max(80),
+  experience: z.string().min(1).max(120),
+  constraints: z.array(z.string().min(1).max(80)).max(8),
+  avoid: z.array(z.string().min(1).max(80)).max(8),
+  missing_slots: z.array(z.string().min(1).max(80)).max(5),
+});
+
+export const IntentProfileInterpretationSchema = z.object({
+  intentProfile: IntentProfileSchema,
+  preference: UserPreferenceSchema,
+});
+
 export type UserIntent = z.infer<typeof UserIntentSchema>;
+export type IntentProfile = z.infer<typeof IntentProfileSchema>;

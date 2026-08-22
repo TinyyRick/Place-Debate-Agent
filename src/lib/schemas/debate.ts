@@ -2,6 +2,7 @@ import { z } from "zod";
 import { FinalistScoreSchema, PlaceCandidateSchema, PlaceFactPackSchema } from "./place";
 import { PreferenceDeltaSchema, UserPreferenceSchema } from "./preference";
 import { UserIntentSchema } from "./intent";
+import { IntentProfileSchema } from "./intent";
 import { SearchPlanSchema } from "./search-plan";
 import { LocationContextSchema, WeatherContextSchema } from "./location";
 
@@ -59,6 +60,7 @@ export const DebateResultSchema = z.object({
   userPreference: UserPreferenceSchema,
   originalPreference: UserPreferenceSchema,
   currentPreference: UserPreferenceSchema,
+  intentProfile: IntentProfileSchema,
   userIntent: UserIntentSchema,
   searchPlan: SearchPlanSchema,
   interventionText: z.string(),

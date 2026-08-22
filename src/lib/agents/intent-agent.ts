@@ -1,4 +1,4 @@
-import { IntentInterpretationSchema, UserIntentSchema, type UserIntent } from "@/lib/schemas/intent";
+import { IntentProfileInterpretationSchema, type IntentProfile } from "@/lib/schemas/intent";
 import { PreferenceDeltaSchema, UserPreferenceSchema, type PreferenceDelta, type UserPreference } from "@/lib/schemas/preference";
 import type { StructuredModel } from "./model-factory";
 import { z } from "zod";
@@ -8,30 +8,28 @@ const PreferenceUpdateSchema = z.object({ updatedPreference: UserPreferenceSchem
 export async function interpretIntent(
   originalQuery: string,
   model: StructuredModel,
-): Promise<{ intent: UserIntent; preference: UserPreference }> {
+): Promise<{ intentProfile: IntentProfile; preference: UserPreference }> {
   const interpretation = await model.invoke(
-    IntentInterpretationSchema,
+    IntentProfileInterpretationSchema,
     [
       {
         role: "system",
         content:
-          "你是地点决策助手的意图解释器。输出 intent 与 preference：intent 是用户想完成的事情，必须区分 fitness(健身运动)、shopping(室内逛街购物)、study(学习阅读) 和 leisure(普通游玩)；preference 是该事情应如何进行。若用户明确说健身、逛街购物、学习阅读，strictCategoryMatch 必须为 true，requiredCategories 只能包含匹配任务的地点类别；不得把偏好、地点事实或建议混入 intent。数值偏好范围为 0 到 1；只提取用户表达或可谨慎推断的约束。",
+          "你是地点决策助手的 Intent Extractor。只提取用户已经表达的需求，输出 intentProfile 与 preference。intentProfile 的 goal/experience/constraints/avoid 都使用用户语言，不得填写任何 POI 类型、搜索关键词或推荐方案。missing_slots 只列当前确实会影响推荐方向、但用户尚未表达的少量不确定点；若目标已足够明确则为空数组。preference 描述节奏、室内外、预算等感受偏好。",
       },
       { role: "user", content: originalQuery },
     ],
-    "intent_interpretation",
+    "intent_profile",
   );
-  return { intent: normalizeExplicitIntent(originalQuery, interpretation.intent), preference: UserPreferenceSchema.parse(interpretation.preference) };
+  return { intentProfile: interpretation.intentProfile, preference: UserPreferenceSchema.parse(interpretation.preference) };
 }
 
-/** Explicit task words are guardrails: a structured model may not dilute them into generic leisure. */
-function normalizeExplicitIntent(query: string, intent: UserIntent): UserIntent {
-  const withGoal = (primaryGoal: UserIntent["primaryGoal"], requiredCategories: UserIntent["requiredCategories"], terms: string[]) =>
-    UserIntentSchema.parse({ ...intent, primaryGoal, requiredCategories, excludedCategories: [], searchTerms: terms, strictCategoryMatch: true });
-  if (/健身房|健身|瑜伽|游泳/.test(query)) return withGoal("fitness", ["fitness"], ["健身房", "健身", "运动馆"]);
-  if (/逛街|购物|商场|买东西/.test(query)) return withGoal("shopping", ["shopping"], ["商场", "购物中心", "百货"]);
-  if (/学习|看书|自习|阅读/.test(query)) return withGoal("study", ["bookstore", "cultural", "cafe"], ["图书馆", "书店", "书局", "安静咖啡馆"]);
-  return UserIntentSchema.parse(intent);
+export async function updateIntentFromClarification(originalQuery: string, previousProfile: IntentProfile, answer: string, model: StructuredModel) {
+  const interpretation = await model.invoke(IntentProfileInterpretationSchema, [
+    { role: "system", content: "你是地点决策助手的 Intent Extractor。根据原始需求与用户的澄清，更新 intentProfile；只保留用户说过的信息。已经获得的 missing_slots 必须移除；不要输出 POI 类型、搜索词或推荐。" },
+    { role: "user", content: `原始需求：${originalQuery}\n当前 IntentProfile：${JSON.stringify(previousProfile)}\n用户澄清：${answer}` },
+  ], "intent_profile_update");
+  return { intentProfile: interpretation.intentProfile, preference: UserPreferenceSchema.parse(interpretation.preference) };
 }
 
 function sameValue(left: unknown, right: unknown) { return JSON.stringify(left) === JSON.stringify(right); }
