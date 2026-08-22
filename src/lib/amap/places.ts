@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { PlaceCandidateSchema, type PlaceCandidate } from "@/lib/schemas/place";
+import type { Coordinates } from "@/lib/schemas/location";
 
 export const NANJING_TEST_LOCATION = {
   longitude: 118.796877,
@@ -35,26 +36,26 @@ function parseLocation(location: string | undefined) {
   return Number.isFinite(longitude) && Number.isFinite(latitude) ? { longitude, latitude } : undefined;
 }
 
-function straightLineDistanceMeters(longitude: number, latitude: number) {
+function straightLineDistanceMeters(longitude: number, latitude: number, origin: Coordinates) {
   const toRadians = (value: number) => value * (Math.PI / 180);
   const earthRadiusMeters = 6_371_000;
-  const deltaLatitude = toRadians(latitude - NANJING_TEST_LOCATION.latitude);
-  const deltaLongitude = toRadians(longitude - NANJING_TEST_LOCATION.longitude);
+  const deltaLatitude = toRadians(latitude - origin.latitude);
+  const deltaLongitude = toRadians(longitude - origin.longitude);
   const a = Math.sin(deltaLatitude / 2) ** 2
-    + Math.cos(toRadians(NANJING_TEST_LOCATION.latitude))
+    + Math.cos(toRadians(origin.latitude))
     * Math.cos(toRadians(latitude))
     * Math.sin(deltaLongitude / 2) ** 2;
   return Math.round(2 * earthRadiusMeters * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
 }
 
-export async function retrieveNearbyPois(): Promise<PlaceCandidate[]> {
+export async function retrieveNearbyPois(origin: Coordinates = NANJING_TEST_LOCATION): Promise<PlaceCandidate[]> {
   const key = process.env.AMAP_WEB_SERVICE_KEY;
   if (!key) throw new Error("AMAP_WEB_SERVICE_KEY is not configured in .env.local.");
 
   const url = new URL("https://restapi.amap.com/v5/place/around");
   url.search = new URLSearchParams({
     key,
-    location: `${NANJING_TEST_LOCATION.longitude},${NANJING_TEST_LOCATION.latitude}`,
+    location: `${origin.longitude},${origin.latitude}`,
     radius: "8000",
     types: "110000|140000|060000|050000|080000",
     page_size: "25",
@@ -80,7 +81,7 @@ export async function retrieveNearbyPois(): Promise<PlaceCandidate[]> {
       latitude: location.latitude,
       address: typeof poi.address === "string" ? poi.address : "",
       distanceMeters: toFiniteNumber(poi.distance)
-        ?? straightLineDistanceMeters(location.longitude, location.latitude),
+        ?? straightLineDistanceMeters(location.longitude, location.latitude, origin),
       ...(rating !== undefined && rating >= 0 && rating <= 5 ? { rating } : {}),
       ...(poi.parent ? { parentId: poi.parent } : {}),
       childCount: poi.children?.length ?? 0,

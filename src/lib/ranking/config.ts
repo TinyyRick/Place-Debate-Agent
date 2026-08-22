@@ -20,3 +20,12 @@ export const RANKING_WEIGHTS = {
   placeQuality: 0.15,
   novelty: 0.05,
 } as const;
+
+export const FINAL_RANKING_WEIGHTS = {
+  interestFit: 0.30,
+  travelFit: 0.25,
+  activityFit: 0.15,
+  weatherFit: 0.15,
+  placeQuality: 0.10,
+  novelty: 0.05,
+} as const;

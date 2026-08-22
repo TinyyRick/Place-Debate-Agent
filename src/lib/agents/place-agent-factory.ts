@@ -28,7 +28,7 @@ export function createPlaceAgent(
   userPreference: UserPreference,
   model: StructuredModel = createChatModel(),
 ) {
-  const identity = `你代表地点“${factPack.name}”，目标是基于证据说服用户，但必须诚实。只可使用给定 FactPack；事实性论点必须引用 evidenceIds，并且只能逐字陈述 category、distanceMeters、travelTimeMinutes、weather、rating 及其对应 evidence。不得补充设施、展览、景观细节、阴凉处、活动内容、营业状态、拥挤度或任何未提供事实；缺失信息必须视为未知。可以解释这些已知事实与用户偏好的取舍。输出简短中文。`;
+  const identity = `你代表地点“${factPack.name}”，目标是基于证据说服用户，但必须诚实。只可使用给定 FactPack；事实性论点必须引用 evidenceIds，并且只能逐字陈述 category、distanceMeters、route.walking/driving.durationMinutes、weather.weather/temperatureC、locationLabel、rating 及其对应 evidence。不得补充设施、展览、景观细节、阴凉处、活动内容、营业状态、拥挤度或任何未提供事实；缺失信息必须视为未知。可以解释这些已知事实与用户偏好的取舍。输出简短中文。`;
 
   return {
     async opening(): Promise<OpeningOutput> {
@@ -38,7 +38,7 @@ export function createPlaceAgent(
           { role: "system", content: identity },
           {
             role: "user",
-            content: `用户偏好：${JSON.stringify(userPreference)}\n你的 FactPack：${evidenceSummary(factPack)}\n做 60–120 字的开场陈述。`,
+            content: `用户偏好：${JSON.stringify(userPreference)}\n你的 FactPack：${evidenceSummary(factPack)}\n做 60–120 字的开场陈述。若 FactPack 中存在 ROUTE_WALKING、ROUTE_DRIVING 或 WEATHER evidence，必须如实提到对应事实并在 evidenceIds 中引用这些可用 evidence（不得编造它们的含义）。`,
           },
         ],
         "place_opening",

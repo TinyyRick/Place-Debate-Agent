@@ -26,6 +26,18 @@ export default function Home() {
   const [result, setResult] = useState<DebateResult | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [gpsCoordinates, setGpsCoordinates] = useState<{ longitude: number; latitude: number } | null>(null);
+  const [locationStatus, setLocationStatus] = useState("使用南京测试坐标");
+
+  function useMyLocation() {
+    if (!navigator.geolocation) { setError("当前浏览器不支持定位。"); return; }
+    setError(""); setLocationStatus("正在获取位置…");
+    navigator.geolocation.getCurrentPosition(
+      (position) => { setGpsCoordinates({ longitude: position.coords.longitude, latitude: position.coords.latitude }); setLocationStatus("已使用你的当前位置"); },
+      (position) => { const messages: Record<number, string> = { 1: "你拒绝了定位权限。", 2: "无法获取当前位置。", 3: "定位超时，请重试。" }; setGpsCoordinates(null); setLocationStatus("使用南京测试坐标"); setError(messages[position.code] ?? "定位失败，请重试。"); },
+      { enableHighAccuracy: true, timeout: 10_000, maximumAge: 60_000 },
+    );
+  }
 
   async function runDebate() {
     setLoading(true);
@@ -35,7 +47,7 @@ export default function Home() {
       const response = await fetch("/api/debate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query }),
+        body: JSON.stringify({ query, ...(gpsCoordinates ? { gpsCoordinates } : {}) }),
       });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error ?? "Debate failed.");
@@ -63,6 +75,8 @@ export default function Home() {
         <button disabled={loading || !query.trim()} onClick={runDebate} type="button">
           {loading ? "Running Debate…" : "Run Debate"}
         </button>
+        <button disabled={loading} onClick={useMyLocation} type="button">使用我的位置</button>
+        <p className="muted">📍 {locationStatus}</p>
         {error ? <p className="error">{error}</p> : null}
       </section>
 
@@ -72,6 +86,7 @@ export default function Home() {
             <h2>Parsed Preference</h2>
             <pre>{JSON.stringify(result.userPreference, null, 2)}</pre>
           </section>
+          <section><p>📍 {result.location.formattedAddress}</p><p>天气：{result.weather.available ? `${result.weather.temperatureC ?? ""}°C · ${result.weather.weather}` : "暂无天气数据"}</p></section>
           <section>
             <h2>Candidates</h2>
             <div className="candidate-grid">
@@ -79,7 +94,7 @@ export default function Home() {
                 <article className="candidate" key={place.id}>
                   <h3>{place.name}</h3>
                   <p>{place.category} · {place.distanceMeters} m</p>
-                  <p>{place.rating === undefined ? "评分未知" : `⭐ ${place.rating}`}</p>
+                  <p>步行 {place.route?.walking.durationMinutes ?? "未知"} min · 驾车 {place.route?.driving.durationMinutes ?? "未知"} min · {place.rating === undefined ? "评分未知" : `⭐ ${place.rating}`}</p>
                 </article>
               ))}
             </div>

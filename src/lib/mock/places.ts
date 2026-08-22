@@ -13,7 +13,7 @@ export const mockPlaces: PlaceFactPack[] = PlaceFactPackSchema.array().parse([
     category: "park",
     distanceMeters: 2100,
     travelTimeMinutes: 12,
-    weather: "33°C / cloudy",
+    weather: { available: true, weather: "多云", temperatureC: 33, reportTime: "2026-08-22 12:00:00" },
     rating: 4.7,
     evidence: [
       { id: "XW_CATEGORY", type: "category", value: "park", source: "mock-place-data" },
@@ -29,7 +29,7 @@ export const mockPlaces: PlaceFactPack[] = PlaceFactPackSchema.array().parse([
     category: "museum",
     distanceMeters: 4200,
     travelTimeMinutes: 18,
-    weather: "indoor",
+    weather: { available: true, weather: "多云", temperatureC: 33, reportTime: "2026-08-22 12:00:00" },
     rating: 4.8,
     evidence: [
       { id: "NM_CATEGORY", type: "category", value: "museum", source: "mock-place-data" },
@@ -45,7 +45,7 @@ export const mockPlaces: PlaceFactPack[] = PlaceFactPackSchema.array().parse([
     category: "bookstore",
     distanceMeters: 3700,
     travelTimeMinutes: 16,
-    weather: "indoor",
+    weather: { available: true, weather: "多云", temperatureC: 33, reportTime: "2026-08-22 12:00:00" },
     rating: 4.6,
     evidence: [
       { id: "PB_CATEGORY", type: "category", value: "bookstore", source: "mock-place-data" },

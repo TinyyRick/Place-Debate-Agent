@@ -1,9 +1,10 @@
 import type { PlaceFactPack, PlaceCandidate } from "@/lib/schemas/place";
 import type { UserPreference } from "@/lib/schemas/preference";
-import { QUALITY_FILTER_CONFIG, RANKING_WEIGHTS } from "./config";
+import { FINAL_RANKING_WEIGHTS, QUALITY_FILTER_CONFIG, RANKING_WEIGHTS } from "./config";
 import { calculatePlaceQuality, classifyDestinationCategory, isDestinationCategory } from "./taxonomy";
 
 export { RANKING_WEIGHTS } from "./config";
+export { FINAL_RANKING_WEIGHTS } from "./config";
 
 function hasExcludedTerm(candidate: PlaceCandidate) {
   return QUALITY_FILTER_CONFIG.excludedNameTerms.some((term) => candidate.name.includes(term))
@@ -99,6 +100,37 @@ export function rankCandidates(candidates: PlaceCandidate[], preference: UserPre
   }).sort((left, right) => (right.preliminaryScore ?? 0) - (left.preliminaryScore ?? 0));
 }
 
+function isIndoor(candidate: PlaceCandidate) { return ["museum", "gallery", "bookstore", "cafe", "cinema", "cultural"].includes(candidate.destinationCategory); }
+function travelFit(candidate: PlaceCandidate, preference: UserPreference) {
+  const walking = candidate.route?.walking.durationMinutes;
+  const driving = candidate.route?.driving.durationMinutes;
+  const score = (minutes: number | undefined, cap: number) => minutes === undefined ? undefined : Math.max(0, 1 - minutes / cap);
+  if (preference.transportPreference === "walking") return score(walking, 45) ?? 0.4;
+  if (preference.transportPreference === "driving") return score(driving, 35) ?? 0.4;
+  return walking !== undefined && walking <= 20 ? score(walking, 35)! : score(driving, 35) ?? score(walking, 45) ?? 0.4;
+}
+function weatherFit(candidate: PlaceCandidate, preference: UserPreference) {
+  const weather = candidate.weather;
+  if (!weather?.available || isIndoor(candidate)) return 1;
+  const rainy = /雨|雪|雷/.test(weather.weather ?? "");
+  const hot = (weather.temperatureC ?? 0) >= 30;
+  if (rainy) return 0.35 + preference.rainTolerance * 0.45;
+  if (hot) return 0.45 + preference.heatTolerance * 0.45;
+  return 1;
+}
+export function finalRankCandidates(candidates: PlaceCandidate[], preference: UserPreference) {
+  return candidates.map((candidate) => {
+    const base = candidate.preliminaryScore ?? 0;
+    const score = FINAL_RANKING_WEIGHTS.interestFit * interestScore(candidate, preference)
+      + FINAL_RANKING_WEIGHTS.travelFit * travelFit(candidate, preference)
+      + FINAL_RANKING_WEIGHTS.activityFit * activityScore(candidate, preference.activityLevel)
+      + FINAL_RANKING_WEIGHTS.weatherFit * weatherFit(candidate, preference)
+      + FINAL_RANKING_WEIGHTS.placeQuality * (candidate.placeQuality ?? 0)
+      + FINAL_RANKING_WEIGHTS.novelty * noveltyScore(candidate, preference);
+    return { ...candidate, preliminaryScore: Number((score || base).toFixed(4)) };
+  }).sort((left, right) => (right.preliminaryScore ?? 0) - (left.preliminaryScore ?? 0));
+}
+
 function areSameDestination(left: PlaceCandidate, right: PlaceCandidate) {
   if (left.parentId && left.parentId === right.parentId) return true;
   const normalizedLeft = left.name.replaceAll(" ", "").toLowerCase();
@@ -136,10 +168,17 @@ export function createFactPacks(candidates: PlaceCandidate[]): PlaceFactPack[] {
     category: candidate.category,
     distanceMeters: candidate.distanceMeters,
     ...(candidate.rating === undefined ? {} : { rating: candidate.rating }),
+    ...(candidate.route ? { route: candidate.route, travelTimeMinutes: candidate.route.walking.durationMinutes ?? candidate.route.driving.durationMinutes } : {}),
+    ...(candidate.weather ? { weather: candidate.weather } : {}),
+    ...(candidate.locationLabel ? { locationLabel: candidate.locationLabel } : {}),
     evidence: [
       { id: `AMAP_${candidate.id}_CATEGORY`, type: "category" as const, value: candidate.category, source: "amap-nearby-poi" },
       { id: `AMAP_${candidate.id}_DISTANCE`, type: "distance" as const, value: candidate.distanceMeters, source: "amap-nearby-poi" },
       ...(candidate.rating === undefined ? [] : [{ id: `AMAP_${candidate.id}_RATING`, type: "rating" as const, value: candidate.rating, source: "amap-nearby-poi" }]),
+      ...(candidate.route?.walking.available && candidate.route.walking.durationMinutes !== undefined ? [{ id: `AMAP_${candidate.id}_ROUTE_WALKING`, type: "route_time" as const, value: candidate.route.walking.durationMinutes, source: "amap", fetchedAt: new Date().toISOString() }] : []),
+      ...(candidate.route?.driving.available && candidate.route.driving.durationMinutes !== undefined ? [{ id: `AMAP_${candidate.id}_ROUTE_DRIVING`, type: "route_time" as const, value: candidate.route.driving.durationMinutes, source: "amap", fetchedAt: new Date().toISOString() }] : []),
+      ...(candidate.weather?.available && candidate.weather.weather ? [{ id: `AMAP_${candidate.id}_WEATHER`, type: "weather" as const, value: `${candidate.weather.temperatureC ?? ""}°C ${candidate.weather.weather}`, source: "amap", fetchedAt: candidate.weather.reportTime }] : []),
+      ...(candidate.locationLabel ? [{ id: `AMAP_${candidate.id}_CURRENT_LOCATION`, type: "location" as const, value: candidate.locationLabel, source: "amap" }] : []),
     ],
   }));
 }

@@ -1,10 +1,12 @@
 import { z } from "zod";
+import { RouteContextSchema, WeatherContextSchema } from "./location";
 
 export const EvidenceSchema = z.object({
   id: z.string().min(1),
-  type: z.enum(["category", "distance", "route_time", "weather", "rating"]),
+  type: z.enum(["category", "distance", "route_time", "weather", "rating", "location"]),
   value: z.union([z.string(), z.number()]),
   source: z.string().min(1),
+  fetchedAt: z.string().optional(),
 });
 
 export const DestinationCategorySchema = z.enum([
@@ -31,6 +33,9 @@ export const PlaceCandidateSchema = z.object({
   address: z.string(),
   distanceMeters: z.number().nonnegative(),
   rating: z.number().min(0).max(5).optional(),
+  route: RouteContextSchema.optional(),
+  weather: WeatherContextSchema.optional(),
+  locationLabel: z.string().optional(),
   parentId: z.string().min(1).optional(),
   childCount: z.number().int().nonnegative().optional(),
   indoorCpid: z.string().min(1).optional(),
@@ -45,7 +50,9 @@ export const PlaceFactPackSchema = z.object({
   category: z.string().min(1),
   distanceMeters: z.number().nonnegative(),
   travelTimeMinutes: z.number().nonnegative().optional(),
-  weather: z.string().min(1).optional(),
+  route: RouteContextSchema.optional(),
+  weather: WeatherContextSchema.optional(),
+  locationLabel: z.string().optional(),
   rating: z.number().min(0).max(5).optional(),
   evidence: z.array(EvidenceSchema).min(1),
 });

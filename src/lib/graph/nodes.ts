@@ -3,8 +3,12 @@ import { moderateDebate } from "@/lib/agents/moderator-agent";
 import { createPlaceAgent } from "@/lib/agents/place-agent-factory";
 import type { StructuredModel } from "@/lib/agents/model-factory";
 import { retrieveNearbyPois } from "@/lib/amap/places";
-import { createFactPacks, hardFilterPois, rankCandidates, selectDiverseCandidates } from "@/lib/ranking/ranker";
+import { getRoutes } from "@/lib/amap/routes";
+import { resolveLocation } from "@/lib/amap/location";
+import { getCurrentWeather } from "@/lib/amap/weather";
+import { createFactPacks, finalRankCandidates, hardFilterPois, rankCandidates, selectDiverseCandidates } from "@/lib/ranking/ranker";
 import type { PlaceCandidate } from "@/lib/schemas/place";
+import type { Coordinates, LocationContext, RouteContext, WeatherContext } from "@/lib/schemas/location";
 import type { DebateMessage } from "@/lib/schemas/debate";
 import type { DebateStateSchema } from "./state";
 
@@ -14,25 +18,36 @@ function requirePreference(state: typeof DebateStateSchema.State) {
 }
 
 export interface PlaceDataSource {
-  retrievePlaces: () => Promise<PlaceCandidate[]>;
+  retrievePlaces: (origin: { longitude: number; latitude: number }) => Promise<PlaceCandidate[]>;
+}
+export interface ContextDataSource {
+  resolveLocation: (gps?: Coordinates) => Promise<LocationContext>;
+  getWeather: (adcode: string) => Promise<WeatherContext>;
+  getRoutes: (origin: Coordinates, destination: PlaceCandidate) => Promise<RouteContext>;
 }
 
 export function createDebateNodes(
   model: StructuredModel,
   dataSource: PlaceDataSource = { retrievePlaces: retrieveNearbyPois },
+  contextDataSource: ContextDataSource = { resolveLocation, getWeather: getCurrentWeather, getRoutes },
 ) {
   return {
     parseIntent: async (state: typeof DebateStateSchema.State) => ({
       userPreference: await interpretIntent(state.originalQuery, model),
     }),
 
-    retrievePlaces: async () => ({ rawPois: await dataSource.retrievePlaces() }),
+    resolveLocation: async (state: typeof DebateStateSchema.State) => ({ location: await contextDataSource.resolveLocation(state.gpsCoordinates) }),
+
+    retrievePlaces: async (state: typeof DebateStateSchema.State) => {
+      if (!state.location) throw new Error("Location has not been resolved.");
+      return { rawPois: await dataSource.retrievePlaces(state.location.amapCoordinates) };
+    },
 
     filterPlaces: (state: typeof DebateStateSchema.State) => ({
       filteredPois: hardFilterPois(state.rawPois),
     }),
 
-    rankPlaces: (state: typeof DebateStateSchema.State) => {
+    preliminaryRank: (state: typeof DebateStateSchema.State) => {
       const rankedCandidates = rankCandidates(state.filteredPois, requirePreference(state));
       const selectedCandidates = selectDiverseCandidates(rankedCandidates);
       if (selectedCandidates.length < 3) {
@@ -41,7 +56,21 @@ export function createDebateNodes(
       return { rankedCandidates: rankedCandidates.slice(0, 10), selectedCandidates };
     },
 
-    enrichFactPacks: (state: typeof DebateStateSchema.State) => ({
+    enrichRoutesAndWeather: async (state: typeof DebateStateSchema.State) => {
+      if (!state.location) throw new Error("Location has not been resolved.");
+      const weather = await contextDataSource.getWeather(state.location.adcode);
+      const enrichedCandidates = await Promise.all(state.selectedCandidates.map(async (candidate) => ({
+        ...candidate,
+        route: await contextDataSource.getRoutes(state.location!.amapCoordinates, candidate),
+        weather,
+        locationLabel: state.location!.formattedAddress,
+      })));
+      return { weather, enrichedCandidates };
+    },
+
+    finalRank: (state: typeof DebateStateSchema.State) => ({ selectedCandidates: selectDiverseCandidates(finalRankCandidates(state.enrichedCandidates, requirePreference(state))) }),
+
+    buildFactPacks: (state: typeof DebateStateSchema.State) => ({
       factPacks: createFactPacks(state.selectedCandidates),
     }),
 

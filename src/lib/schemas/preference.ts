@@ -7,6 +7,9 @@ export const UserPreferenceSchema = z.object({
   culturePreference: z.number().min(0).max(1),
   budgetLevel: z.enum(["low", "medium", "flexible"]),
   companions: z.enum(["solo", "couple", "friends", "family"]),
+  transportPreference: z.enum(["walking", "driving", "flexible"]).default("flexible"),
+  heatTolerance: z.number().min(0).max(1).default(0.5),
+  rainTolerance: z.number().min(0).max(1).default(0.5),
   freeTextConstraints: z.array(z.string()),
 });
 

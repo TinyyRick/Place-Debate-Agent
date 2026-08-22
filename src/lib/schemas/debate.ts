@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { PlaceCandidateSchema, PlaceFactPackSchema } from "./place";
 import { UserPreferenceSchema } from "./preference";
+import { LocationContextSchema, WeatherContextSchema } from "./location";
 
 export const OpeningOutputSchema = z.object({
   claim: z.string().min(1).max(240),
@@ -42,10 +43,13 @@ export const ModeratorResultSchema = z.object({
 export const DebateResultSchema = z.object({
   originalQuery: z.string(),
   userPreference: UserPreferenceSchema,
+  location: LocationContextSchema,
+  weather: WeatherContextSchema,
   rawPois: z.array(PlaceCandidateSchema),
   filteredPois: z.array(PlaceCandidateSchema),
   rankedCandidates: z.array(PlaceCandidateSchema),
   selectedCandidates: z.array(PlaceCandidateSchema),
+  enrichedCandidates: z.array(PlaceCandidateSchema),
   factPacks: z.array(PlaceFactPackSchema),
   openingMessages: z.array(DebateMessageSchema),
   attackMessages: z.array(DebateMessageSchema),

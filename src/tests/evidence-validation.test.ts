@@ -11,6 +11,9 @@ const preference: UserPreference = {
   culturePreference: 0.8,
   budgetLevel: "medium",
   companions: "solo",
+  transportPreference: "flexible",
+  heatTolerance: 0.5,
+  rainTolerance: 0.5,
   freeTextConstraints: ["不要太累"],
 };
 
