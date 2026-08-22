@@ -1,0 +1,49 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: light;
+  --ink: #17211b;
+  --muted: #667269;
+  --paper: #f4f1e8;
+  --card: #fffef9;
+  --line: #d8d6ca;
+  --accent: #176b45;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: Arial, "PingFang SC", sans-serif;
+}
+
+main { width: min(100% - 32px, 760px); margin: 0 auto; padding: 56px 0 96px; }
+header { margin-bottom: 28px; }
+h1 { margin: 6px 0 10px; font-size: clamp(2.25rem, 8vw, 4.5rem); line-height: .95; letter-spacing: -.05em; }
+h2 { margin: 0 0 18px; font-size: 1.35rem; }
+h3 { margin: 16px 0 8px; }
+p { line-height: 1.6; }
+.eyebrow { color: var(--accent); font-size: .78rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+.intro, .muted { color: var(--muted); }
+section { margin-top: 16px; padding: 22px; border: 1px solid var(--line); border-radius: 18px; background: var(--card); }
+label { display: block; margin-bottom: 10px; font-weight: 700; }
+textarea { width: 100%; resize: vertical; border: 1px solid var(--line); border-radius: 12px; padding: 14px; background: white; color: inherit; font: inherit; line-height: 1.5; }
+textarea:focus { outline: 2px solid color-mix(in srgb, var(--accent) 35%, transparent); border-color: var(--accent); }
+button { margin-top: 12px; border: 0; border-radius: 999px; padding: 12px 20px; background: var(--accent); color: white; font: inherit; font-weight: 700; cursor: pointer; }
+button:disabled { cursor: wait; opacity: .55; }
+.error { border-radius: 10px; padding: 12px; background: #fee8e5; color: #8b2118; }
+.results { margin-top: 32px; }
+pre { overflow: auto; border-radius: 12px; padding: 14px; background: #17211b; color: #eaf4ed; font-size: .78rem; }
+.candidate-grid, .message-list { display: grid; gap: 10px; }
+.candidate, .message { border: 1px solid var(--line); border-radius: 12px; padding: 14px; background: white; }
+.candidate h3, .message p { margin-top: 0; }
+.candidate p { margin: 4px 0; color: var(--muted); }
+.message small { color: var(--accent); overflow-wrap: anywhere; }
+li { margin-bottom: 8px; line-height: 1.45; }
+
+@media (max-width: 480px) {
+  main { width: min(100% - 24px, 390px); padding-top: 32px; }
+  section { padding: 17px; border-radius: 15px; }
+}

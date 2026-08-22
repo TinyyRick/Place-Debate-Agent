@@ -1,0 +1,52 @@
+import { PlaceFactPackSchema, type PlaceFactPack } from "@/lib/schemas/place";
+
+export const mockPlaces: PlaceFactPack[] = PlaceFactPackSchema.array().parse([
+  {
+    id: "xuanwu-lake",
+    name: "玄武湖",
+    category: "park",
+    distanceMeters: 2100,
+    travelTimeMinutes: 12,
+    weather: "33°C / cloudy",
+    rating: 4.7,
+    evidence: [
+      { id: "XW_CATEGORY", type: "category", value: "park", source: "mock-place-data" },
+      { id: "XW_DISTANCE", type: "distance", value: 2100, source: "mock-place-data" },
+      { id: "XW_ROUTE", type: "route_time", value: 12, source: "mock-place-data" },
+      { id: "XW_WEATHER", type: "weather", value: "33°C / cloudy", source: "mock-place-data" },
+      { id: "XW_RATING", type: "rating", value: 4.7, source: "mock-place-data" },
+    ],
+  },
+  {
+    id: "nanjing-museum",
+    name: "南京博物院",
+    category: "museum",
+    distanceMeters: 4200,
+    travelTimeMinutes: 18,
+    weather: "indoor",
+    rating: 4.8,
+    evidence: [
+      { id: "NM_CATEGORY", type: "category", value: "museum", source: "mock-place-data" },
+      { id: "NM_DISTANCE", type: "distance", value: 4200, source: "mock-place-data" },
+      { id: "NM_ROUTE", type: "route_time", value: 18, source: "mock-place-data" },
+      { id: "NM_WEATHER", type: "weather", value: "indoor", source: "mock-place-data" },
+      { id: "NM_RATING", type: "rating", value: 4.8, source: "mock-place-data" },
+    ],
+  },
+  {
+    id: "pioneer-bookstore",
+    name: "先锋书店",
+    category: "bookstore",
+    distanceMeters: 3700,
+    travelTimeMinutes: 16,
+    weather: "indoor",
+    rating: 4.6,
+    evidence: [
+      { id: "PB_CATEGORY", type: "category", value: "bookstore", source: "mock-place-data" },
+      { id: "PB_DISTANCE", type: "distance", value: 3700, source: "mock-place-data" },
+      { id: "PB_ROUTE", type: "route_time", value: 16, source: "mock-place-data" },
+      { id: "PB_WEATHER", type: "weather", value: "indoor", source: "mock-place-data" },
+      { id: "PB_RATING", type: "rating", value: 4.6, source: "mock-place-data" },
+    ],
+  },
+]);
