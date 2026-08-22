@@ -10,7 +10,7 @@ import { getMetroAccess } from "@/lib/amap/metro";
 import { createFactPacks, finalRankCandidates, hardFilterPois, rankCandidates, scoreFinalistsAfterIntervention, selectDiverseCandidates } from "@/lib/ranking/ranker";
 import type { PlaceCandidate } from "@/lib/schemas/place";
 import type { Coordinates, LocationContext, RouteContext, WeatherContext } from "@/lib/schemas/location";
-import type { DebateMessage } from "@/lib/schemas/debate";
+import { CandidateDecisionSchema, OpeningOutputSchema, type DebateMessage } from "@/lib/schemas/debate";
 import type { DebateStateSchema } from "./state";
 import { interrupt } from "@langchain/langgraph";
 import { UserPreferenceSchema, type UserPreference } from "@/lib/schemas/preference";
@@ -53,7 +53,7 @@ export function createDebateNodes(
     },
 
     filterPlaces: (state: typeof DebateStateSchema.State) => ({
-      filteredPois: hardFilterPois(state.rawPois),
+      filteredPois: hardFilterPois(state.rawPois).filter((candidate) => !state.excludedPoiIds.includes(candidate.id)),
     }),
 
     preliminaryRank: (state: typeof DebateStateSchema.State) => {
@@ -132,6 +132,45 @@ export function createDebateNodes(
       }) as { intervention?: unknown } | string;
       const interventionText = typeof resumed === "string" ? resumed.trim() : typeof resumed?.intervention === "string" ? resumed.intervention.trim() : "";
       return { interventionText };
+    },
+
+    candidateDecision: (state: typeof DebateStateSchema.State) => {
+      const resumed = interrupt({ candidates: state.factPacks.map((place) => ({ id: place.id, name: place.name, category: place.category })), openingMessages: state.openingMessages, attackMessages: state.attackMessages, actions: ["eliminate_candidate", "refresh_candidates"] });
+      return { candidateDecision: CandidateDecisionSchema.parse(resumed) };
+    },
+
+    eliminateCandidate: (state: typeof DebateStateSchema.State) => {
+      const decision = state.candidateDecision;
+      if (decision?.actionType !== "eliminate_candidate" || !state.factPacks.some((place) => place.id === decision.eliminatedPoiId)) throw new Error("Invalid candidate elimination.");
+      const survivingCandidateIds = state.factPacks.filter((place) => place.id !== decision.eliminatedPoiId).map((place) => place.id);
+      if (survivingCandidateIds.length !== 2) throw new Error("Candidate elimination must leave exactly two survivors.");
+      return { eliminatedPoiIds: [...state.eliminatedPoiIds, decision.eliminatedPoiId], survivingCandidateIds };
+    },
+
+    finalDuel: async (state: typeof DebateStateSchema.State) => {
+      const survivors = state.factPacks.filter((place) => state.survivingCandidateIds.includes(place.id));
+      const outputs = await Promise.all(survivors.map(async (place) => {
+        const opponent = survivors.find((candidate) => candidate.id !== place.id)!;
+        const output = await model.invoke(OpeningOutputSchema, [{ role: "system", content: "你是地点决赛辩手。用自然中文给出最后一次 60-120 字发言：承认对手一个真实优势，再说明当前二选一为什么该选你。只能引用自己的 FactPack，最多三个证据，不要逐项报数据。" }, { role: "user", content: `当前偏好:${JSON.stringify(requirePreference(state))}\n我:${JSON.stringify(place)}\n对手:${JSON.stringify(opponent)}\n用户淘汰了:${state.eliminatedPoiIds.join(",")}` }], "final_duel");
+        return { place, output };
+      }));
+      return { finalDuelMessages: outputs.map(({ place, output }) => ({ id: `duel-${place.id}`, type: "rebuttal" as const, speakerPoiId: place.id, claim: output.claim, evidenceIds: output.evidenceIds.slice(0, 3) })) };
+    },
+
+    finalSelection: (state: typeof DebateStateSchema.State) => {
+      const selectedPoiId = interrupt({ candidates: state.survivingCandidateIds, finalDuelMessages: state.finalDuelMessages });
+      if (typeof selectedPoiId !== "string" || !state.survivingCandidateIds.includes(selectedPoiId)) throw new Error("Final selection must be one of the surviving candidates.");
+      return { selectedPoiId };
+    },
+
+    refreshCandidates: async (state: typeof DebateStateSchema.State) => {
+      if (state.candidateRound >= 2) throw new Error("A debate can refresh candidates at most once.");
+      const decision = state.candidateDecision;
+      if (decision?.actionType !== "refresh_candidates") throw new Error("Refresh requires an explicit refresh action.");
+      const { updatedPreference, preferenceDelta } = await updatePreferenceFromIntervention(requirePreference(state), decision.feedbackText, model);
+      if (!state.location) throw new Error("Location has not been resolved.");
+      const rawPois = await dataSource.retrievePlaces(state.location.amapCoordinates);
+      return { rawPois, currentPreference: updatedPreference, userPreference: updatedPreference, preferenceDelta, interventionText: decision.feedbackText, excludedPoiIds: [...state.excludedPoiIds, ...state.factPacks.map((place) => place.id)], previousCandidateRounds: [...state.previousCandidateRounds, state.selectedCandidates], candidateRound: 2, refreshReason: decision.feedbackText };
     },
 
     updatePreference: async (state: typeof DebateStateSchema.State) => {

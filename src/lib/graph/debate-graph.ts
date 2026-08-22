@@ -15,6 +15,11 @@ export const DEBATE_GRAPH_NODES = [
   "buildFactPacks",
   "openingRound",
   "attackRound",
+  "candidateDecisionGate",
+  "eliminateCandidate",
+  "finalDuel",
+  "finalSelection",
+  "refreshCandidates",
   "userIntervention",
   "updatePreference",
   "detectMissingEvidence",
@@ -43,6 +48,11 @@ export function createDebateGraph(
     .addNode("buildFactPacks", nodes.buildFactPacks)
     .addNode("openingRound", nodes.openingRound)
     .addNode("attackRound", nodes.attackRound)
+    .addNode("candidateDecisionGate", nodes.candidateDecision)
+    .addNode("eliminateCandidate", nodes.eliminateCandidate)
+    .addNode("finalDuel", nodes.finalDuel)
+    .addNode("finalSelection", nodes.finalSelection)
+    .addNode("refreshCandidates", nodes.refreshCandidates)
     .addNode("userIntervention", nodes.userIntervention)
     .addNode("updatePreference", nodes.updatePreference)
     .addNode("detectMissingEvidence", nodes.detectMissingEvidence)
@@ -60,7 +70,12 @@ export function createDebateGraph(
     .addEdge("finalRank", "buildFactPacks")
     .addEdge("buildFactPacks", "openingRound")
     .addEdge("openingRound", "attackRound")
-    .addEdge("attackRound", "userIntervention")
+    .addEdge("attackRound", "candidateDecisionGate")
+    .addConditionalEdges("candidateDecisionGate", (state) => state.candidateDecision?.actionType === "eliminate_candidate" ? "eliminateCandidate" : "refreshCandidates")
+    .addEdge("eliminateCandidate", "finalDuel")
+    .addEdge("finalDuel", "finalSelection")
+    .addEdge("finalSelection", END)
+    .addEdge("refreshCandidates", "filterPlaces")
     .addEdge("userIntervention", "updatePreference")
     .addEdge("updatePreference", "detectMissingEvidence")
     .addConditionalEdges("detectMissingEvidence", (state) => state.missingEvidenceTypes.includes("METRO_ACCESS") ? "enrichInterventionEvidence" : "rerankFinalists")
@@ -98,12 +113,12 @@ export async function startDebate(
 
 export async function resumeDebate(
   threadId: string,
-  intervention: string,
+  action: unknown,
   runtime: DebateRuntime = getServerDebateRuntime(),
-): Promise<DebateResult> {
-  const output = await runtime.graph.invoke(new Command({ resume: { intervention } }), { configurable: { thread_id: threadId } });
-  if (isInterrupted(output)) throw new Error("Debate is still awaiting user intervention.");
-  return DebateResultSchema.parse(output);
+): Promise<{ status: "completed" | "awaiting_final_selection"; debate: DebateResult | unknown }> {
+  const output = await runtime.graph.invoke(new Command({ resume: action }), { configurable: { thread_id: threadId } });
+  if (isInterrupted(output)) return { status: "awaiting_final_selection", debate: output };
+  return { status: "completed", debate: DebateResultSchema.parse(output) };
 }
 
 let serverRuntime: DebateRuntime | undefined;

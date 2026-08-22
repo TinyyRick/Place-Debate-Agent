@@ -59,6 +59,7 @@ export const deterministicModel: StructuredModel = {
         claim: "我能以清晰可核验的地点条件回应你的偏好。",
         evidenceIds: [ownEvidence],
       },
+      final_duel: { claim: "我承认对手有优势，但当前二选一我更贴近你的核心取舍。", evidenceIds: [ownEvidence] },
       place_attack: {
         targetPoiId: attackTarget,
         claim: "对方的路程时间更长，需要权衡体力。",

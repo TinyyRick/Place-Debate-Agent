@@ -1,6 +1,6 @@
 import { StateSchema } from "@langchain/langgraph";
 import { z } from "zod";
-import { DebateMessageSchema, ModeratorResultSchema } from "@/lib/schemas/debate";
+import { CandidateDecisionSchema, DebateMessageSchema, ModeratorResultSchema } from "@/lib/schemas/debate";
 import { FinalistScoreSchema, PlaceCandidateSchema, PlaceFactPackSchema } from "@/lib/schemas/place";
 import { PreferenceDeltaSchema, UserPreferenceSchema } from "@/lib/schemas/preference";
 import { CoordinatesSchema, LocationContextSchema, WeatherContextSchema } from "@/lib/schemas/location";
@@ -19,6 +19,16 @@ export const DebateStateSchema = new StateSchema({
   missingEvidenceTypes: z.array(z.enum(["METRO_ACCESS"])).default([]),
   beforeInterventionScores: z.array(FinalistScoreSchema).default([]),
   afterInterventionScores: z.array(FinalistScoreSchema).default([]),
+  candidateDecision: CandidateDecisionSchema.optional(),
+  eliminatedPoiIds: z.array(z.string()).default([]),
+  survivingCandidateIds: z.array(z.string()).default([]),
+  excludedPoiIds: z.array(z.string()).default([]),
+  excludedCategories: z.array(z.string()).default([]),
+  candidateRound: z.number().int().min(1).default(1),
+  previousCandidateRounds: z.array(z.array(PlaceCandidateSchema)).default([]),
+  refreshReason: z.string().default(""),
+  selectedPoiId: z.string().optional(),
+  finalDuelMessages: z.array(DebateMessageSchema).default([]),
   rawPois: z.array(PlaceCandidateSchema).default([]),
   filteredPois: z.array(PlaceCandidateSchema).default([]),
   rankedCandidates: z.array(PlaceCandidateSchema).default([]),

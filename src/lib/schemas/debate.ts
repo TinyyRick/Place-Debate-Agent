@@ -16,6 +16,11 @@ export const RebuttalOutputSchema = OpeningOutputSchema.extend({
   responseToAttackId: z.string().min(1),
   attackerPoiId: z.string().min(1),
 });
+export const CandidateDecisionSchema = z.discriminatedUnion("actionType", [
+  z.object({ actionType: z.literal("eliminate_candidate"), eliminatedPoiId: z.string().min(1) }),
+  z.object({ actionType: z.literal("refresh_candidates"), feedbackText: z.string().default(""), selectedReasons: z.array(z.string()).default([]) }),
+  z.object({ actionType: z.literal("continue_with_feedback"), feedbackText: z.string().default("") }),
+]);
 
 export const DebateMessageSchema = z.object({
   id: z.string().min(1),
@@ -53,11 +58,17 @@ export const DebateResultSchema = z.object({
   originalPreference: UserPreferenceSchema,
   currentPreference: UserPreferenceSchema,
   interventionText: z.string(),
-  preferenceDelta: PreferenceDeltaSchema,
+  preferenceDelta: PreferenceDeltaSchema.optional(),
   requiredEvidenceTypes: z.array(z.enum(["METRO_ACCESS"])),
   missingEvidenceTypes: z.array(z.enum(["METRO_ACCESS"])),
   beforeInterventionScores: z.array(FinalistScoreSchema),
   afterInterventionScores: z.array(FinalistScoreSchema),
+  eliminatedPoiIds: z.array(z.string()),
+  survivingCandidateIds: z.array(z.string()),
+  excludedPoiIds: z.array(z.string()),
+  candidateRound: z.number().int(),
+  selectedPoiId: z.string().optional(),
+  finalDuelMessages: z.array(DebateMessageSchema),
   location: LocationContextSchema,
   weather: WeatherContextSchema,
   rawPois: z.array(PlaceCandidateSchema),
@@ -69,12 +80,13 @@ export const DebateResultSchema = z.object({
   openingMessages: z.array(DebateMessageSchema),
   attackMessages: z.array(DebateMessageSchema),
   rebuttalMessages: z.array(DebateMessageSchema),
-  moderatorResult: ModeratorResultSchema,
+  moderatorResult: ModeratorResultSchema.optional(),
 });
 
 export type OpeningOutput = z.infer<typeof OpeningOutputSchema>;
 export type AttackOutput = z.infer<typeof AttackOutputSchema>;
 export type RebuttalOutput = z.infer<typeof RebuttalOutputSchema>;
+export type CandidateDecision = z.infer<typeof CandidateDecisionSchema>;
 export type DebateMessage = z.infer<typeof DebateMessageSchema>;
 export type ModeratorResult = z.infer<typeof ModeratorResultSchema>;
 export type DebateResult = z.infer<typeof DebateResultSchema>;

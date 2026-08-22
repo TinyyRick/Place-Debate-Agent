@@ -45,14 +45,15 @@ export default function Home() {
     finally { setLoading(false); }
   }
 
-  async function resumeDebate(text = intervention) {
+  async function resumeDebate(action: unknown) {
     if (!awaiting) return;
     setLoading(true); setError("");
     try {
-      const response = await fetch("/api/debate/resume", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ threadId: awaiting.threadId, intervention: text }) });
+      const response = await fetch("/api/debate/resume", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ threadId: awaiting.threadId, action }) });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error ?? "Debate failed to resume.");
-      setResult(body.debate as DebateResult); setAwaiting(null);
+      if (body.status === "awaiting_final_selection") setAwaiting({ ...(awaiting as AwaitingIntervention), debate: body.debate } as AwaitingIntervention);
+      else { setResult(body.debate as DebateResult); setAwaiting(null); }
     } catch (caught) { setError(caught instanceof Error ? caught.message : "Debate failed to resume."); }
     finally { setLoading(false); }
   }
@@ -73,10 +74,10 @@ export default function Home() {
       <section><h2>Candidates</h2><div className="candidate-grid">{activeDebate.factPacks.map((place) => <article className="candidate" key={place.id}><h3>{place.name}</h3><p>{place.category} · {place.distanceMeters} m</p><p>步行 {place.route?.walking.durationMinutes ?? "未知"} min · 驾车 {place.route?.driving.durationMinutes ?? "未知"} min · {place.rating === undefined ? "评分未知" : `⭐ ${place.rating}`}</p></article>)}</div></section>
       <section><h2>Round 1 · Opening</h2><MessageList messages={activeDebate.openingMessages} names={names} /></section>
       <section><h2>Round 2 · Attack</h2><MessageList messages={activeDebate.attackMessages} names={names} /></section>
-      {awaiting ? <section><p>在他们继续之前，你有什么想补充的吗？</p><textarea aria-label="有什么想补充的吗？" value={intervention} onChange={(event) => setIntervention(event.target.value)} rows={3} placeholder="例如：其实我不怕热，我更想看历史建筑。" /><button disabled={loading} onClick={() => void resumeDebate()} type="button">加入我的想法</button><button disabled={loading} onClick={() => void resumeDebate("")} type="button">不补充，继续</button></section> : null}
-      {result ? <><section><h2>Preference Update</h2><p>你补充了：{result.interventionText || "没有新增偏好"}</p><ul>{result.preferenceDelta.changedFields.map((change) => <li key={change.field}>{change.field}: {JSON.stringify(change.before)} → {JSON.stringify(change.after)}</li>)}</ul><h3>Current Preference</h3><pre>{JSON.stringify(result.currentPreference, null, 2)}</pre></section>
+      {awaiting && (awaiting.debate as { survivingCandidateIds?: string[] }).survivingCandidateIds?.length === 2 ? <section><h2>Final Duel</h2><MessageList messages={(awaiting.debate as unknown as DebateResult).finalDuelMessages} names={names} />{(awaiting.debate as unknown as DebateResult).survivingCandidateIds.map((id) => <button key={id} disabled={loading} onClick={() => void resumeDebate(id)} type="button">选择 {names.get(id)}</button>)}</section> : awaiting ? <section><h2>听完第一轮，你现在可以：</h2><p>淘汰一个，让另外两个继续辩。</p>{activeDebate.factPacks.map((place) => <button key={place.id} disabled={loading} onClick={() => void resumeDebate({ actionType: "eliminate_candidate", eliminatedPoiId: place.id })} type="button">淘汰 {place.name}</button>)}<p>这三个都不太行，换一批。</p><textarea aria-label="补充你的要求" value={intervention} onChange={(event) => setIntervention(event.target.value)} rows={3} placeholder="哪里不太对？" /><button disabled={loading} onClick={() => void resumeDebate({ actionType: "refresh_candidates", feedbackText: intervention, selectedReasons: [] })} type="button">按这些要求重新找</button></section> : null}
+      {result ? <><section><h2>Preference Update</h2><p>你补充了：{result.interventionText || "没有新增偏好"}</p><ul>{result.preferenceDelta?.changedFields.map((change) => <li key={change.field}>{change.field}: {JSON.stringify(change.before)} → {JSON.stringify(change.after)}</li>)}</ul><h3>Current Preference</h3><pre>{JSON.stringify(result.currentPreference, null, 2)}</pre></section>
       <section><h2>Round 3 · Rebuttal</h2><MessageList messages={result.rebuttalMessages} names={names} /></section>
-      <section><h2>Moderator Summary</h2><p>{result.moderatorResult.recommendationSummary}</p><p>{result.moderatorResult.preferenceImpact}</p><h3>当前匹配度</h3><ol>{result.moderatorResult.rankingByCurrentFit.map((item) => <li key={item.poiId}><strong>{names.get(item.poiId)}</strong> — {item.reason}</li>)}</ol><h3>冲突轴</h3><ul>{result.moderatorResult.conflictAxes.map((axis) => <li key={axis}>{axis}</li>)}</ul></section></> : null}
+      {result.moderatorResult ? <section><h2>Moderator Summary</h2><p>{result.moderatorResult.recommendationSummary}</p><p>{result.moderatorResult.preferenceImpact}</p><h3>当前匹配度</h3><ol>{result.moderatorResult.rankingByCurrentFit.map((item) => <li key={item.poiId}><strong>{names.get(item.poiId)}</strong> — {item.reason}</li>)}</ol><h3>冲突轴</h3><ul>{result.moderatorResult.conflictAxes.map((axis) => <li key={axis}>{axis}</li>)}</ul></section> : null}</> : null}
     </div> : null}
   </main>;
 }
