@@ -45,6 +45,7 @@ export const DebateResultSchema = z.object({
   rawPois: z.array(PlaceCandidateSchema),
   filteredPois: z.array(PlaceCandidateSchema),
   rankedCandidates: z.array(PlaceCandidateSchema),
+  selectedCandidates: z.array(PlaceCandidateSchema),
   factPacks: z.array(PlaceFactPackSchema),
   openingMessages: z.array(DebateMessageSchema),
   attackMessages: z.array(DebateMessageSchema),

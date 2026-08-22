@@ -7,6 +7,20 @@ export const EvidenceSchema = z.object({
   source: z.string().min(1),
 });
 
+export const DestinationCategorySchema = z.enum([
+  "park",
+  "attraction",
+  "museum",
+  "gallery",
+  "bookstore",
+  "cafe",
+  "cinema",
+  "shopping",
+  "entertainment",
+  "cultural",
+  "other",
+]);
+
 export const PlaceCandidateSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
@@ -17,6 +31,11 @@ export const PlaceCandidateSchema = z.object({
   address: z.string(),
   distanceMeters: z.number().nonnegative(),
   rating: z.number().min(0).max(5).optional(),
+  parentId: z.string().min(1).optional(),
+  childCount: z.number().int().nonnegative().optional(),
+  indoorCpid: z.string().min(1).optional(),
+  destinationCategory: DestinationCategorySchema.default("other"),
+  placeQuality: z.number().min(0).max(1).optional(),
   preliminaryScore: z.number().min(0).max(1).optional(),
 });
 
@@ -32,5 +51,6 @@ export const PlaceFactPackSchema = z.object({
 });
 
 export type Evidence = z.infer<typeof EvidenceSchema>;
+export type DestinationCategory = z.infer<typeof DestinationCategorySchema>;
 export type PlaceCandidate = z.infer<typeof PlaceCandidateSchema>;
 export type PlaceFactPack = z.infer<typeof PlaceFactPackSchema>;

@@ -13,12 +13,15 @@ const AMapResponseSchema = z.object({
   pois: z.array(z.object({
     id: z.string().optional(),
     name: z.string().optional(),
+    parent: z.string().optional(),
     type: z.string().optional(),
     typecode: z.string().optional(),
     location: z.string().optional(),
     address: z.union([z.string(), z.array(z.unknown())]).optional(),
     distance: z.union([z.string(), z.number()]).optional(),
+    children: z.array(z.object({ id: z.string().optional() })).optional(),
     business: z.object({ rating: z.union([z.string(), z.number()]).optional() }).optional(),
+    indoor: z.object({ cpid: z.string().optional() }).optional(),
   })).default([]),
 });
 
@@ -52,11 +55,11 @@ export async function retrieveNearbyPois(): Promise<PlaceCandidate[]> {
   url.search = new URLSearchParams({
     key,
     location: `${NANJING_TEST_LOCATION.longitude},${NANJING_TEST_LOCATION.latitude}`,
-    radius: "5000",
-    types: "110000|140000|060000",
+    radius: "8000",
+    types: "110000|140000|060000|050000|080000",
     page_size: "25",
     page_num: "1",
-    show_fields: "business",
+    show_fields: "business,children,indoor",
   }).toString();
 
   const response = await fetch(url, { cache: "no-store" });
@@ -79,6 +82,9 @@ export async function retrieveNearbyPois(): Promise<PlaceCandidate[]> {
       distanceMeters: toFiniteNumber(poi.distance)
         ?? straightLineDistanceMeters(location.longitude, location.latitude),
       ...(rating !== undefined && rating >= 0 && rating <= 5 ? { rating } : {}),
+      ...(poi.parent ? { parentId: poi.parent } : {}),
+      childCount: poi.children?.length ?? 0,
+      ...(poi.indoor?.cpid ? { indoorCpid: poi.indoor.cpid } : {}),
     };
     return [PlaceCandidateSchema.parse(candidate)];
   });

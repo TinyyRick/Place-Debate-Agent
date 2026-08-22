@@ -3,7 +3,7 @@ import { moderateDebate } from "@/lib/agents/moderator-agent";
 import { createPlaceAgent } from "@/lib/agents/place-agent-factory";
 import type { StructuredModel } from "@/lib/agents/model-factory";
 import { retrieveNearbyPois } from "@/lib/amap/places";
-import { createFactPacks, hardFilterPois, rankCandidates } from "@/lib/ranking/ranker";
+import { createFactPacks, hardFilterPois, rankCandidates, selectDiverseCandidates } from "@/lib/ranking/ranker";
 import type { PlaceCandidate } from "@/lib/schemas/place";
 import type { DebateMessage } from "@/lib/schemas/debate";
 import type { DebateStateSchema } from "./state";
@@ -33,15 +33,16 @@ export function createDebateNodes(
     }),
 
     rankPlaces: (state: typeof DebateStateSchema.State) => {
-      const rankedCandidates = rankCandidates(state.filteredPois, requirePreference(state)).slice(0, 3);
-      if (rankedCandidates.length < 3) {
-        throw new Error(`Only ${rankedCandidates.length} AMap candidates remained after filtering; at least 3 are required.`);
+      const rankedCandidates = rankCandidates(state.filteredPois, requirePreference(state));
+      const selectedCandidates = selectDiverseCandidates(rankedCandidates);
+      if (selectedCandidates.length < 3) {
+        throw new Error(`Only ${selectedCandidates.length} valid destination candidates remained after fallback; at least 3 are required.`);
       }
-      return { rankedCandidates };
+      return { rankedCandidates: rankedCandidates.slice(0, 10), selectedCandidates };
     },
 
     enrichFactPacks: (state: typeof DebateStateSchema.State) => ({
-      factPacks: createFactPacks(state.rankedCandidates),
+      factPacks: createFactPacks(state.selectedCandidates),
     }),
 
     openingRound: async (state: typeof DebateStateSchema.State) => {

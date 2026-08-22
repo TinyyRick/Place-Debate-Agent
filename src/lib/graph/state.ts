@@ -10,6 +10,7 @@ export const DebateStateSchema = new StateSchema({
   rawPois: z.array(PlaceCandidateSchema).default([]),
   filteredPois: z.array(PlaceCandidateSchema).default([]),
   rankedCandidates: z.array(PlaceCandidateSchema).default([]),
+  selectedCandidates: z.array(PlaceCandidateSchema).default([]),
   factPacks: z.array(PlaceFactPackSchema).default([]),
   openingMessages: z.array(DebateMessageSchema).default([]),
   attackMessages: z.array(DebateMessageSchema).default([]),

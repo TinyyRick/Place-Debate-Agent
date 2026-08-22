@@ -1,59 +1,132 @@
 import type { PlaceFactPack, PlaceCandidate } from "@/lib/schemas/place";
 import type { UserPreference } from "@/lib/schemas/preference";
+import { QUALITY_FILTER_CONFIG, RANKING_WEIGHTS } from "./config";
+import { calculatePlaceQuality, classifyDestinationCategory, isDestinationCategory } from "./taxonomy";
 
-const MAX_DISTANCE_METERS = 5_000;
+export { RANKING_WEIGHTS } from "./config";
 
-export const RANKING_WEIGHTS = {
-  distance: 0.45,
-  interest: 0.30,
-  activity: 0.15,
-  rating: 0.10,
-} as const;
-
-function categoryKind(candidate: PlaceCandidate) {
-  if (candidate.typeCode.startsWith("1100")) return "nature";
-  if (candidate.typeCode.startsWith("1400")) return "culture";
-  return "shopping";
+function hasExcludedTerm(candidate: PlaceCandidate) {
+  return QUALITY_FILTER_CONFIG.excludedNameTerms.some((term) => candidate.name.includes(term))
+    || QUALITY_FILTER_CONFIG.excludedCategoryTerms.some((term) => candidate.category.includes(term));
 }
 
-function activityScore(candidate: PlaceCandidate, activityLevel: UserPreference["activityLevel"]) {
-  const kind = categoryKind(candidate);
-  if (activityLevel === "low") return kind === "nature" ? 0.55 : 1;
-  if (activityLevel === "high") return kind === "nature" ? 1 : 0.7;
-  return 0.8;
+function enrichCandidate(candidate: PlaceCandidate) {
+  const destinationCategory = classifyDestinationCategory(candidate);
+  return { ...candidate, destinationCategory, placeQuality: calculatePlaceQuality(candidate, destinationCategory) };
+}
+
+function isEligibleDestination(candidate: PlaceCandidate, distanceLimit: number, allowOther = false) {
+  const enriched = enrichCandidate(candidate);
+  return enriched.distanceMeters <= distanceLimit
+    && !hasExcludedTerm(enriched)
+    && (allowOther || isDestinationCategory(enriched.destinationCategory));
+}
+
+function betterCandidate(left: PlaceCandidate, right: PlaceCandidate) {
+  const leftQuality = left.placeQuality ?? 0;
+  const rightQuality = right.placeQuality ?? 0;
+  if (leftQuality !== rightQuality) return leftQuality > rightQuality ? left : right;
+  return left.distanceMeters <= right.distanceMeters ? left : right;
+}
+
+function deduplicateCandidates(candidates: PlaceCandidate[]) {
+  const byKey = new Map<string, PlaceCandidate>();
+  const parentIds = new Set(candidates.flatMap((candidate) => candidate.parentId ? [candidate.parentId] : []));
+  for (const candidate of candidates) {
+    const key = candidate.parentId
+      ? `parent:${candidate.parentId}`
+      : parentIds.has(candidate.id)
+        ? `parent:${candidate.id}`
+      : `${candidate.name.trim().toLowerCase()}-${candidate.longitude.toFixed(4)}-${candidate.latitude.toFixed(4)}`;
+    const existing = byKey.get(key);
+    byKey.set(key, existing ? betterCandidate(existing, candidate) : candidate);
+  }
+  return [...byKey.values()];
+}
+
+/** Filters infrastructure first; fallback expands only distance/category strictness, never infrastructure exclusions. */
+export function hardFilterPois(candidates: PlaceCandidate[]) {
+  const preferred = deduplicateCandidates(
+    candidates.filter((candidate) => isEligibleDestination(candidate, QUALITY_FILTER_CONFIG.preferredDistanceMeters)),
+  );
+  if (preferred.length >= 3) return preferred;
+
+  const fallback = deduplicateCandidates(
+    candidates.filter((candidate) => isEligibleDestination(candidate, QUALITY_FILTER_CONFIG.fallbackDistanceMeters, true)),
+  );
+  const selectedIds = new Set(preferred.map((candidate) => candidate.id));
+  return [...preferred, ...fallback.filter((candidate) => !selectedIds.has(candidate.id))];
 }
 
 function interestScore(candidate: PlaceCandidate, preference: UserPreference) {
-  const kind = categoryKind(candidate);
-  if (kind === "nature") return preference.naturePreference;
-  if (kind === "culture") return preference.culturePreference;
-  return 0.35;
+  switch (candidate.destinationCategory) {
+    case "park": return preference.naturePreference;
+    case "attraction": return preference.naturePreference * 0.55 + preference.culturePreference * 0.45;
+    case "museum": case "gallery": case "cultural": return preference.culturePreference;
+    case "bookstore": return preference.culturePreference * 0.85 + preference.indoorPreference * 0.15;
+    case "cafe": return preference.indoorPreference * 0.6 + 0.35;
+    case "cinema": return preference.indoorPreference * 0.5 + preference.culturePreference * 0.5;
+    case "entertainment": return 0.55;
+    case "shopping": return 0.3;
+    default: return 0.2;
+  }
 }
 
-export function hardFilterPois(candidates: PlaceCandidate[]) {
-  const seen = new Set<string>();
-  return candidates.filter((candidate) => {
-    if (candidate.distanceMeters > MAX_DISTANCE_METERS) return false;
-    if (!/^(1100|1400|0600)/.test(candidate.typeCode)) return false;
-    const dedupeKey = `${candidate.name.trim().toLowerCase()}-${candidate.longitude.toFixed(4)}-${candidate.latitude.toFixed(4)}`;
-    if (seen.has(dedupeKey)) return false;
-    seen.add(dedupeKey);
-    return true;
-  });
+function activityScore(candidate: PlaceCandidate, activityLevel: UserPreference["activityLevel"]) {
+  const indoorFriendly = ["museum", "gallery", "bookstore", "cafe", "cinema", "cultural"].includes(candidate.destinationCategory);
+  if (activityLevel === "low") return indoorFriendly ? 1 : candidate.destinationCategory === "shopping" ? 0.75 : 0.55;
+  if (activityLevel === "high") return ["park", "attraction", "entertainment"].includes(candidate.destinationCategory) ? 1 : 0.7;
+  return 0.8;
+}
+
+function noveltyScore(candidate: PlaceCandidate, preference: UserPreference) {
+  const asksForInterest = preference.freeTextConstraints.some((constraint) =>
+    ["有意思", "新奇", "特别", "逛"].some((term) => constraint.includes(term)),
+  );
+  if (!asksForInterest) return 0.6;
+  return ["museum", "gallery", "bookstore", "attraction", "cultural", "entertainment"].includes(candidate.destinationCategory) ? 1 : 0.55;
 }
 
 export function rankCandidates(candidates: PlaceCandidate[], preference: UserPreference) {
-  return candidates
-    .map((candidate) => {
-      const distance = Math.max(0, 1 - candidate.distanceMeters / MAX_DISTANCE_METERS);
-      const rating = candidate.rating === undefined ? 0.5 : candidate.rating / 5;
-      const score = RANKING_WEIGHTS.distance * distance
-        + RANKING_WEIGHTS.interest * interestScore(candidate, preference)
-        + RANKING_WEIGHTS.activity * activityScore(candidate, preference.activityLevel)
-        + RANKING_WEIGHTS.rating * rating;
-      return { ...candidate, preliminaryScore: Number(score.toFixed(4)) };
-    })
-    .sort((left, right) => (right.preliminaryScore ?? 0) - (left.preliminaryScore ?? 0));
+  return candidates.map(enrichCandidate).map((candidate) => {
+    const distance = Math.max(0, 1 - candidate.distanceMeters / QUALITY_FILTER_CONFIG.fallbackDistanceMeters);
+    const score = RANKING_WEIGHTS.interestFit * interestScore(candidate, preference)
+      + RANKING_WEIGHTS.distance * distance
+      + RANKING_WEIGHTS.activityFit * activityScore(candidate, preference.activityLevel)
+      + RANKING_WEIGHTS.placeQuality * (candidate.placeQuality ?? 0)
+      + RANKING_WEIGHTS.novelty * noveltyScore(candidate, preference);
+    return { ...candidate, preliminaryScore: Number(score.toFixed(4)) };
+  }).sort((left, right) => (right.preliminaryScore ?? 0) - (left.preliminaryScore ?? 0));
+}
+
+function areSameDestination(left: PlaceCandidate, right: PlaceCandidate) {
+  if (left.parentId && left.parentId === right.parentId) return true;
+  const normalizedLeft = left.name.replaceAll(" ", "").toLowerCase();
+  const normalizedRight = right.name.replaceAll(" ", "").toLowerCase();
+  const namesOverlap = normalizedLeft === normalizedRight
+    || (Math.min(normalizedLeft.length, normalizedRight.length) >= 4
+      && (normalizedLeft.includes(normalizedRight) || normalizedRight.includes(normalizedLeft)));
+  const coordinateGap = Math.hypot(left.longitude - right.longitude, left.latitude - right.latitude) * 111_000;
+  return namesOverlap || (coordinateGap <= QUALITY_FILTER_CONFIG.sameDestinationDistanceMeters
+    && left.destinationCategory === right.destinationCategory);
+}
+
+/** Selects distinct categories first, then fills remaining slots without same-destination duplicates. */
+export function selectDiverseCandidates(ranked: PlaceCandidate[], limit = 3) {
+  const selected: PlaceCandidate[] = [];
+  const addIfDistinct = (candidate: PlaceCandidate) => {
+    if (selected.length >= limit || selected.some((chosen) => areSameDestination(chosen, candidate))) return;
+    selected.push(candidate);
+  };
+  const categories = new Set<string>();
+  for (const candidate of ranked) {
+    if (!categories.has(candidate.destinationCategory)) {
+      addIfDistinct(candidate);
+      categories.add(candidate.destinationCategory);
+    }
+  }
+  for (const candidate of ranked) addIfDistinct(candidate);
+  return selected;
 }
 
 export function createFactPacks(candidates: PlaceCandidate[]): PlaceFactPack[] {
