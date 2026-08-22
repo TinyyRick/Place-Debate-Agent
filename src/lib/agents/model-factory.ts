@@ -30,7 +30,11 @@ export function createChatModel({
     throw new Error("DEEPSEEK_API_KEY is not configured. Add it to .env.local and try again.");
   }
 
-  const chatModel = new ChatDeepSeek({ model, temperature });
+  const chatModel = new ChatDeepSeek({
+    model,
+    temperature,
+    modelKwargs: { thinking: { type: "disabled" } },
+  });
 
   return {
     async invoke<T extends Record<string, unknown>>(

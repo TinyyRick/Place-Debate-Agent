@@ -28,7 +28,7 @@ export function createPlaceAgent(
   userPreference: UserPreference,
   model: StructuredModel = createChatModel(),
 ) {
-  const identity = `你代表地点“${factPack.name}”，目标是基于证据说服用户，但必须诚实。只可使用给定 FactPack；事实性论点必须引用 evidenceIds。缺失信息必须视为未知。输出简短中文。`;
+  const identity = `你代表地点“${factPack.name}”，目标是基于证据说服用户，但必须诚实。只可使用给定 FactPack；事实性论点必须引用 evidenceIds，并且只能逐字陈述 category、distanceMeters、travelTimeMinutes、weather、rating 及其对应 evidence。不得补充设施、展览、景观细节、阴凉处、活动内容、营业状态、拥挤度或任何未提供事实；缺失信息必须视为未知。可以解释这些已知事实与用户偏好的取舍。输出简短中文。`;
 
   return {
     async opening(): Promise<OpeningOutput> {
@@ -54,7 +54,7 @@ export function createPlaceAgent(
           { role: "system", content: identity },
           {
             role: "user",
-            content: `用户偏好：${JSON.stringify(userPreference)}\n你的 FactPack：${evidenceSummary(factPack)}\n竞争地点：${JSON.stringify(competitors)}\n开场陈述：${JSON.stringify(openings)}\n选择一个竞争对手，指出一个与用户偏好相关、证据充分的具体弱点。`,
+            content: `用户偏好：${JSON.stringify(userPreference)}\n你的 FactPack：${evidenceSummary(factPack)}\n竞争地点：${JSON.stringify(competitors)}\n开场陈述：${JSON.stringify(openings)}\n选择一个竞争对手，指出一个与用户偏好相关、证据充分的具体弱点。targetPoiId 必须等于你选择的竞争地点 id。evidenceIds 必须只包含该 target FactPack 中真实存在的 id，逐字复制；绝不能包含你自己 FactPack 的 evidence id，也不能混用多个地点的 evidence。`,
           },
         ],
         "place_attack",
