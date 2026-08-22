@@ -23,6 +23,12 @@ export const deterministicModel: StructuredModel = {
     const attackEvidence = placeId === "nanjing-museum"
       ? "AMAP_xuanwu-lake_CATEGORY"
       : "AMAP_nanjing-museum_CATEGORY";
+    const responseToAttackId = prompt.includes("attack-xuanwu-lake-nanjing-museum")
+      ? "attack-xuanwu-lake-nanjing-museum"
+      : prompt.includes("attack-pioneer-bookstore-nanjing-museum")
+        ? "attack-pioneer-bookstore-nanjing-museum"
+        : "attack-nanjing-museum-xuanwu-lake";
+    const attackerPoiId = responseToAttackId.split("-").slice(1, -2).join("-");
     const values: Record<string, unknown> = {
       user_preference: {
         activityLevel: "low",
@@ -45,6 +51,8 @@ export const deterministicModel: StructuredModel = {
       place_rebuttal: {
         claim: "我的室内条件可以降低天气带来的影响。",
         evidenceIds: [ownEvidence],
+        responseToAttackId,
+        attackerPoiId,
       },
       moderator_result: {
         conflictAxes: ["户外自然与室内文化", "路程时间"],

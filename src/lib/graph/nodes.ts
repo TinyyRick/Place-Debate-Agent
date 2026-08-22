@@ -81,6 +81,7 @@ export function createDebateNodes(
       );
       return {
         openingMessages: outputs.map<DebateMessage>((output, index) => ({
+          id: `opening-${state.factPacks[index].id}`,
           type: "opening",
           speakerPoiId: state.factPacks[index].id,
           claim: output.claim,
@@ -101,6 +102,7 @@ export function createDebateNodes(
       );
       return {
         attackMessages: outputs.map<DebateMessage>((output, index) => ({
+          id: `attack-${state.factPacks[index].id}-${output.targetPoiId}`,
           type: "attack",
           speakerPoiId: state.factPacks[index].id,
           targetPoiId: output.targetPoiId,
@@ -112,20 +114,24 @@ export function createDebateNodes(
 
     rebuttalRound: async (state: typeof DebateStateSchema.State) => {
       const preference = requirePreference(state);
-      const attackedPlaces = state.factPacks.filter((place) =>
-        state.attackMessages.some((attack) => attack.targetPoiId === place.id),
-      );
       const outputs = await Promise.all(
-        attackedPlaces.map((place) =>
-          createPlaceAgent(place, preference, model).rebuttal(
-            state.attackMessages.filter((attack) => attack.targetPoiId === place.id),
-          ),
-        ),
+        state.attackMessages.map(async (attack) => {
+          const place = state.factPacks.find((candidate) => candidate.id === attack.targetPoiId);
+          if (!place) throw new Error(`Attack ${attack.id} targeted an unknown place.`);
+          return {
+            attack,
+            place,
+            output: await createPlaceAgent(place, preference, model).rebuttal(attack),
+          };
+        }),
       );
       return {
-        rebuttalMessages: outputs.map<DebateMessage>((output, index) => ({
+        rebuttalMessages: outputs.map<DebateMessage>(({ attack, place, output }) => ({
+          id: `rebuttal-${attack.id}`,
           type: "rebuttal",
-          speakerPoiId: attackedPlaces[index].id,
+          speakerPoiId: place.id,
+          attackerPoiId: attack.speakerPoiId,
+          responseToAttackId: attack.id,
           claim: output.claim,
           evidenceIds: output.evidenceIds,
         })),

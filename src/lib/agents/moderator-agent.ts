@@ -19,7 +19,7 @@ export async function moderateDebate(
       {
         role: "system",
         content:
-          "你是中立主持人。仅根据 FactPacks 和辩论内容总结当前匹配度、冲突轴与取舍。事实只能使用 category、distanceMeters、travelTimeMinutes、weather、rating 的给定值；不得补充设施、展览、景观细节、活动内容、营业状态或任何未提供事实。不把建议包装成绝对裁决，最终选择权属于用户。",
+          "你是中立主持人。仅根据 FactPacks 和辩论内容总结当前匹配度、冲突轴与取舍。明确区分事实（给定 category、distanceMeters、route、weather、rating）、取舍（这些事实与偏好的关系）和推断；evidence 无法支持的内容必须写为未知，不得把弱推断说成地点的既定品质。天气只讨论舒适度，评分只讨论公开评分相对高低，类别只讨论活动类型；绝不把评分、天气或类别等同于有趣、体验好坏、文化价值或室内设施。不得补充设施、展览、景观细节、活动内容、营业状态或任何未提供事实。不把建议包装成绝对裁决，最终选择权属于用户。",
       },
       {
         role: "user",

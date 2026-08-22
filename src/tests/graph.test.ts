@@ -17,7 +17,14 @@ describe("debate graph", () => {
     expect(result.factPacks).toHaveLength(3);
     expect(result.openingMessages).toHaveLength(3);
     expect(result.attackMessages).toHaveLength(3);
-    expect(result.rebuttalMessages).toHaveLength(2);
+    expect(result.rebuttalMessages).toHaveLength(3);
+    for (const rebuttal of result.rebuttalMessages) {
+      const attack = result.attackMessages.find((message) => message.id === rebuttal.responseToAttackId);
+      expect(attack).toBeDefined();
+      expect(rebuttal.speakerPoiId).toBe(attack?.targetPoiId);
+      expect(rebuttal.attackerPoiId).toBe(attack?.speakerPoiId);
+      expect(rebuttal.claim).not.toBe(attack?.claim);
+    }
     expect(result.moderatorResult.rankingByCurrentFit).toHaveLength(3);
   });
 });

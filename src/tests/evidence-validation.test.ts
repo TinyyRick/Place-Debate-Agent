@@ -51,4 +51,41 @@ describe("place-agent evidence validation", () => {
 
     await expect(agent.attack([mockPlaces[1]], [])).rejects.toThrow("attacked an unknown competitor");
   });
+
+  it("rejects a rebuttal that copies its attack or binds to the wrong attacker", async () => {
+    const copiedModel: StructuredModel = {
+      async invoke(schema, _messages, name) {
+        if (name !== "place_rebuttal") throw new Error("Unexpected test call.");
+        return schema.parse({
+          responseToAttackId: "attack-nanjing-museum-xuanwu-lake",
+          attackerPoiId: "nanjing-museum",
+          claim: "对方的路程更长。",
+          evidenceIds: ["XW_DISTANCE"],
+        });
+      },
+    };
+    const attack = { id: "attack-nanjing-museum-xuanwu-lake", type: "attack" as const, speakerPoiId: "nanjing-museum", targetPoiId: "xuanwu-lake", claim: "对方的路程更长。", evidenceIds: ["XW_DISTANCE"] };
+    await expect(createPlaceAgent(mockPlaces[0], preference, copiedModel).rebuttal(attack)).rejects.toThrow("copied the attack claim");
+  });
+
+  it("rejects a rebuttal with an invalid binding", async () => {
+    const wrongBindingModel: StructuredModel = {
+      async invoke(schema, _messages, name) {
+        if (name !== "place_rebuttal") throw new Error("Unexpected test call.");
+        return schema.parse({ responseToAttackId: "wrong", attackerPoiId: "wrong", claim: "我会基于自己的证据回应距离取舍。", evidenceIds: ["XW_DISTANCE"] });
+      },
+    };
+    const attack = { id: "attack-nanjing-museum-xuanwu-lake", type: "attack" as const, speakerPoiId: "nanjing-museum", targetPoiId: "xuanwu-lake", claim: "对方的路程更长。", evidenceIds: ["XW_DISTANCE"] };
+    await expect(createPlaceAgent(mockPlaces[0], preference, wrongBindingModel).rebuttal(attack)).rejects.toThrow("must bind to attack");
+  });
+
+  it("rejects unsupported rating or weather claims about fun", async () => {
+    const unsafeModel: StructuredModel = {
+      async invoke(schema, _messages, name) {
+        if (name !== "place_attack") throw new Error("Unexpected test call.");
+        return schema.parse({ targetPoiId: "nanjing-museum", claim: "对方评分较低，因此趣味性有保障不了。", evidenceIds: ["NM_RATING"] });
+      },
+    };
+    await expect(createPlaceAgent(mockPlaces[0], preference, unsafeModel).attack([mockPlaces[1]], [])).rejects.toThrow("unsupported evidence inference");
+  });
 });

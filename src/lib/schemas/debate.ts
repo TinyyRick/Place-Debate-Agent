@@ -12,12 +12,18 @@ export const AttackOutputSchema = OpeningOutputSchema.extend({
   targetPoiId: z.string().min(1),
 });
 
-export const RebuttalOutputSchema = OpeningOutputSchema;
+export const RebuttalOutputSchema = OpeningOutputSchema.extend({
+  responseToAttackId: z.string().min(1),
+  attackerPoiId: z.string().min(1),
+});
 
 export const DebateMessageSchema = z.object({
+  id: z.string().min(1),
   type: z.enum(["opening", "attack", "rebuttal"]),
   speakerPoiId: z.string().min(1),
   targetPoiId: z.string().min(1).optional(),
+  responseToAttackId: z.string().min(1).optional(),
+  attackerPoiId: z.string().min(1).optional(),
   claim: z.string().min(1).max(240),
   evidenceIds: z.array(z.string()).min(1),
 });
