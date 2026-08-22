@@ -11,6 +11,12 @@ function hasExcludedTerm(candidate: PlaceCandidate) {
     || QUALITY_FILTER_CONFIG.excludedCategoryTerms.some((term) => candidate.category.includes(term));
 }
 
+/** Match only the suffix of a compound POI name: never reject independent names merely because they contain “门”. */
+function hasSubPoiSuffix(candidate: PlaceCandidate) {
+  const suffix = candidate.name.split(/[-—–]/).at(-1)?.replace(/（.*?）|\(.*?\)/g, "").trim() ?? "";
+  return suffix !== candidate.name && QUALITY_FILTER_CONFIG.subPoiSuffixTerms.some((term) => suffix === term || suffix.startsWith(term));
+}
+
 function enrichCandidate(candidate: PlaceCandidate) {
   const destinationCategory = classifyDestinationCategory(candidate);
   return { ...candidate, destinationCategory, placeQuality: calculatePlaceQuality(candidate, destinationCategory) };
@@ -20,6 +26,7 @@ function isEligibleDestination(candidate: PlaceCandidate, distanceLimit: number,
   const enriched = enrichCandidate(candidate);
   return enriched.distanceMeters <= distanceLimit
     && !hasExcludedTerm(enriched)
+    && !hasSubPoiSuffix(enriched)
     && (allowOther || isDestinationCategory(enriched.destinationCategory));
 }
 
@@ -178,6 +185,7 @@ export function createFactPacks(candidates: PlaceCandidate[]): PlaceFactPack[] {
       ...(candidate.route?.walking.available && candidate.route.walking.durationMinutes !== undefined ? [{ id: `AMAP_${candidate.id}_ROUTE_WALKING`, type: "route_time" as const, value: candidate.route.walking.durationMinutes, source: "amap", fetchedAt: new Date().toISOString() }] : []),
       ...(candidate.route?.driving.available && candidate.route.driving.durationMinutes !== undefined ? [{ id: `AMAP_${candidate.id}_ROUTE_DRIVING`, type: "route_time" as const, value: candidate.route.driving.durationMinutes, source: "amap", fetchedAt: new Date().toISOString() }] : []),
       ...(candidate.weather?.available && candidate.weather.weather ? [{ id: `AMAP_${candidate.id}_WEATHER`, type: "weather" as const, value: `${candidate.weather.temperatureC ?? ""}°C ${candidate.weather.weather}`, source: "amap", fetchedAt: candidate.weather.reportTime }] : []),
+      ...(candidate.weather?.assessment ? [{ id: `AMAP_${candidate.id}_WEATHER_ASSESSMENT`, type: "weather_assessment" as const, value: candidate.weather.assessment.outdoorComfort, source: "deterministic-weather-assessment", fetchedAt: candidate.weather.reportTime }] : []),
       ...(candidate.locationLabel ? [{ id: `AMAP_${candidate.id}_CURRENT_LOCATION`, type: "location" as const, value: candidate.locationLabel, source: "amap" }] : []),
     ],
   }));

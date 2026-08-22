@@ -17,7 +17,7 @@ describe("AMap location context normalization", () => {
 
   it("normalizes reverse geocoding and real-time weather", async () => {
     await expect(reverseGeocode({ longitude: 118.7, latitude: 32 }, async () => json({ status: "1", info: "OK", regeocode: { formatted_address: "南京市玄武区", addressComponent: { province: "江苏省", city: "南京市", district: "玄武区", adcode: "320102" } } }))).resolves.toMatchObject({ formattedAddress: "南京市玄武区", adcode: "320102" });
-    await expect(getCurrentWeather("320102", async () => json({ status: "1", lives: [{ weather: "小雨", temperature: "31", humidity: "70", winddirection: "东", windpower: "3", reporttime: "2026-08-22 10:00:00" }] }))).resolves.toMatchObject({ available: true, weather: "小雨", temperatureC: 31 });
+    await expect(getCurrentWeather("320102", async () => json({ status: "1", lives: [{ weather: "小雨", temperature: "31", humidity: "70", winddirection: "东", windpower: "3", reporttime: "2026-08-22 10:00:00" }] }))).resolves.toMatchObject({ available: true, weather: "小雨", temperatureC: 31, assessment: { outdoorComfort: "rainy", temperatureLevel: "hot", humidityLevel: "humid", rainImpact: "rainy" } });
   });
 
   it("converts route seconds to rounded minutes and preserves unavailable routes", async () => {

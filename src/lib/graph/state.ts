@@ -2,7 +2,7 @@ import { StateSchema } from "@langchain/langgraph";
 import { z } from "zod";
 import { DebateMessageSchema, ModeratorResultSchema } from "@/lib/schemas/debate";
 import { PlaceCandidateSchema, PlaceFactPackSchema } from "@/lib/schemas/place";
-import { UserPreferenceSchema } from "@/lib/schemas/preference";
+import { PreferenceDeltaSchema, UserPreferenceSchema } from "@/lib/schemas/preference";
 import { CoordinatesSchema, LocationContextSchema, WeatherContextSchema } from "@/lib/schemas/location";
 
 export const DebateStateSchema = new StateSchema({
@@ -11,6 +11,10 @@ export const DebateStateSchema = new StateSchema({
   location: LocationContextSchema.optional(),
   weather: WeatherContextSchema.optional(),
   userPreference: UserPreferenceSchema.optional(),
+  originalPreference: UserPreferenceSchema.optional(),
+  currentPreference: UserPreferenceSchema.optional(),
+  interventionText: z.string().default(""),
+  preferenceDelta: PreferenceDeltaSchema.optional(),
   rawPois: z.array(PlaceCandidateSchema).default([]),
   filteredPois: z.array(PlaceCandidateSchema).default([]),
   rankedCandidates: z.array(PlaceCandidateSchema).default([]),

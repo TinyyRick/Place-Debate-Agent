@@ -1,4 +1,4 @@
-import { interpretIntent } from "@/lib/agents/intent-agent";
+import { interpretIntent, updatePreferenceFromIntervention } from "@/lib/agents/intent-agent";
 import { moderateDebate } from "@/lib/agents/moderator-agent";
 import { createPlaceAgent } from "@/lib/agents/place-agent-factory";
 import type { StructuredModel } from "@/lib/agents/model-factory";
@@ -11,10 +11,16 @@ import type { PlaceCandidate } from "@/lib/schemas/place";
 import type { Coordinates, LocationContext, RouteContext, WeatherContext } from "@/lib/schemas/location";
 import type { DebateMessage } from "@/lib/schemas/debate";
 import type { DebateStateSchema } from "./state";
+import { interrupt } from "@langchain/langgraph";
+import { UserPreferenceSchema, type UserPreference } from "@/lib/schemas/preference";
 
-function requirePreference(state: typeof DebateStateSchema.State) {
-  if (!state.userPreference) throw new Error("User preference has not been parsed.");
-  return state.userPreference;
+function requirePreference(state: typeof DebateStateSchema.State): UserPreference {
+  if (!state.currentPreference && !state.userPreference) throw new Error("User preference has not been parsed.");
+  return UserPreferenceSchema.parse(state.currentPreference ?? state.userPreference);
+}
+function requireOriginalPreference(state: typeof DebateStateSchema.State): UserPreference {
+  if (!state.originalPreference) throw new Error("Original user preference has not been parsed.");
+  return UserPreferenceSchema.parse(state.originalPreference);
 }
 
 export interface PlaceDataSource {
@@ -32,9 +38,10 @@ export function createDebateNodes(
   contextDataSource: ContextDataSource = { resolveLocation, getWeather: getCurrentWeather, getRoutes },
 ) {
   return {
-    parseIntent: async (state: typeof DebateStateSchema.State) => ({
-      userPreference: await interpretIntent(state.originalQuery, model),
-    }),
+    parseIntent: async (state: typeof DebateStateSchema.State) => {
+      const userPreference = await interpretIntent(state.originalQuery, model);
+      return { userPreference, originalPreference: userPreference, currentPreference: userPreference };
+    },
 
     resolveLocation: async (state: typeof DebateStateSchema.State) => ({ location: await contextDataSource.resolveLocation(state.gpsCoordinates) }),
 
@@ -112,8 +119,24 @@ export function createDebateNodes(
       };
     },
 
+    userIntervention: async (state: typeof DebateStateSchema.State) => {
+      // Interrupt is deliberately the first operation: LangGraph restarts this node on resume.
+      const resumed = interrupt({
+        currentPreference: requirePreference(state),
+        candidates: state.factPacks.map((place) => ({ id: place.id, name: place.name, category: place.category })),
+        openingSummaries: state.openingMessages.map((message) => ({ speakerPoiId: message.speakerPoiId, claim: message.claim })),
+        attackSummaries: state.attackMessages.map((message) => ({ id: message.id, speakerPoiId: message.speakerPoiId, targetPoiId: message.targetPoiId, claim: message.claim })),
+      }) as { intervention?: unknown } | string;
+      const interventionText = typeof resumed === "string" ? resumed.trim() : typeof resumed?.intervention === "string" ? resumed.intervention.trim() : "";
+      const previousPreference = requirePreference(state);
+      const { updatedPreference, preferenceDelta } = await updatePreferenceFromIntervention(previousPreference, interventionText, model);
+      return { interventionText, userPreference: updatedPreference, currentPreference: updatedPreference, preferenceDelta };
+    },
+
     rebuttalRound: async (state: typeof DebateStateSchema.State) => {
-      const preference = requirePreference(state);
+      const currentPreference = requirePreference(state);
+      const originalPreference = requireOriginalPreference(state);
+      if (!state.preferenceDelta) throw new Error("Preference delta is required after user intervention.");
       const outputs = await Promise.all(
         state.attackMessages.map(async (attack) => {
           const place = state.factPacks.find((candidate) => candidate.id === attack.targetPoiId);
@@ -121,7 +144,7 @@ export function createDebateNodes(
           return {
             attack,
             place,
-            output: await createPlaceAgent(place, preference, model).rebuttal(attack),
+            output: await createPlaceAgent(place, currentPreference, model).rebuttal(attack, originalPreference, currentPreference, state.preferenceDelta!),
           };
         }),
       );
@@ -140,7 +163,9 @@ export function createDebateNodes(
 
     moderatorSummary: async (state: typeof DebateStateSchema.State) => ({
       moderatorResult: await moderateDebate(
+        requireOriginalPreference(state),
         requirePreference(state),
+        state.preferenceDelta ?? { interventionText: "", changedFields: [] },
         state.factPacks,
         [...state.openingMessages, ...state.attackMessages, ...state.rebuttalMessages],
         model,

@@ -11,6 +11,7 @@ export const QUALITY_FILTER_CONFIG = {
     "停车", "厕所", "公交", "地铁", "加油", "充电", "自动售卖",
     "学校", "研究院", "研究所", "设计院", "培训", "会堂", "礼堂", "办公", "政府机关", "公司企业",
   ],
+  subPoiSuffixTerms: ["入口", "出口", "南门", "北门", "东门", "西门", "午门", "检票口", "售票处", "停车场", "停车区"],
 } as const;
 
 export const RANKING_WEIGHTS = {

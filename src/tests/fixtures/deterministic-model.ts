@@ -39,6 +39,20 @@ export const deterministicModel: StructuredModel = {
         companions: "solo",
         freeTextConstraints: ["不要太累", "有点意思"],
       },
+      preference_update: {
+        updatedPreference: {
+          activityLevel: "low",
+          indoorPreference: 0.7,
+          naturePreference: 0.6,
+          culturePreference: prompt.includes("历史建筑") ? 0.95 : 0.8,
+          budgetLevel: "medium",
+          companions: "solo",
+          transportPreference: "flexible",
+          heatTolerance: prompt.includes("不怕热") ? 0.9 : 0.5,
+          rainTolerance: 0.5,
+          freeTextConstraints: ["不要太累", "有点意思"],
+        },
+      },
       place_opening: {
         claim: "我能以清晰可核验的地点条件回应你的偏好。",
         evidenceIds: [ownEvidence],
@@ -67,6 +81,7 @@ export const deterministicModel: StructuredModel = {
           { poiId: "xuanwu-lake", strengths: ["自然"], weaknesses: ["高温天气"] },
         ],
         recommendationSummary: "若更看重轻松与文化，优先比较两个室内地点；最终选择仍由你决定。",
+        preferenceImpact: "用户补充会改变文化与耐热取舍，但候选未重新排序。",
       },
     };
 

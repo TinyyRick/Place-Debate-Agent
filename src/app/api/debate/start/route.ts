@@ -14,7 +14,7 @@ export async function POST(request: Request) {
     const { query, gpsCoordinates } = RequestSchema.parse(await request.json());
     return NextResponse.json(await startDebate(query, gpsCoordinates));
   } catch (error) {
-    const message = error instanceof Error ? error.message : "The debate could not be completed.";
+    const message = error instanceof Error ? error.message : "The debate could not be started.";
     return NextResponse.json({ error: message }, { status: 400 });
   }
 }

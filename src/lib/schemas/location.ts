@@ -11,13 +11,21 @@ export const LocationContextSchema = z.object({
   district: z.string().optional(),
   adcode: z.string().min(1),
 });
+export const WeatherAssessmentSchema = z.object({
+  outdoorComfort: z.enum(["comfortable", "warm", "hot", "hot_humid", "rainy", "severe"]),
+  temperatureLevel: z.enum(["comfortable", "warm", "hot"]).optional(),
+  humidityLevel: z.enum(["normal", "humid"]).optional(),
+  rainImpact: z.enum(["none", "rainy", "severe"]),
+});
 export const WeatherContextSchema = z.object({
   available: z.boolean(), weather: z.string().optional(), temperatureC: z.number().optional(), humidity: z.number().optional(),
   windDirection: z.string().optional(), windPower: z.string().optional(), reportTime: z.string().optional(),
+  assessment: WeatherAssessmentSchema.optional(),
 });
 export const RouteModeSchema = z.object({ available: z.boolean(), durationMinutes: z.number().nonnegative().optional(), distanceMeters: z.number().nonnegative().optional() });
 export const RouteContextSchema = z.object({ walking: RouteModeSchema, driving: RouteModeSchema });
 export type Coordinates = z.infer<typeof CoordinatesSchema>;
 export type LocationContext = z.infer<typeof LocationContextSchema>;
 export type WeatherContext = z.infer<typeof WeatherContextSchema>;
+export type WeatherAssessment = z.infer<typeof WeatherAssessmentSchema>;
 export type RouteContext = z.infer<typeof RouteContextSchema>;

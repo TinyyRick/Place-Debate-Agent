@@ -44,6 +44,18 @@ describe("destination quality filtering", () => {
     expect(filtered.map((item) => item.id)).toEqual(["temple", "museum", "bookstore"]);
   });
 
+  it("filters compound sub-POI suffixes without rejecting independent gates or historical buildings", () => {
+    const filtered = hardFilterPois([
+      candidate({ id: "park-gate", name: "午朝门公园-午门(明故宫路)", category: "风景名胜;旅游景点", typeCode: "110000" }),
+      candidate({ id: "scenic-entry", name: "某景区-东门", category: "风景名胜;旅游景点", typeCode: "110000" }),
+      candidate({ id: "drum-tower", name: "鼓楼", category: "风景名胜;旅游景点", typeCode: "110000" }),
+      candidate({ id: "city-gate-ruin", name: "城门遗址", category: "风景名胜;旅游景点", typeCode: "110000" }),
+      candidate({ id: "museum", name: "南京博物院", category: "科教文化服务;博物馆", typeCode: "140100" }),
+      candidate({ id: "bookstore", name: "先锋书店", category: "购物服务;专卖店", typeCode: "060000" }),
+    ]);
+    expect(filtered.map((item) => item.id)).toEqual(["drum-tower", "city-gate-ruin", "museum", "bookstore"]);
+  });
+
   it("keeps one best representative when sibling POIs share a parent", () => {
     const filtered = hardFilterPois([
       candidate({ id: "museum-main", name: "南京博物院", category: "科教文化服务;博物馆", typeCode: "140100", rating: 4.8 }),

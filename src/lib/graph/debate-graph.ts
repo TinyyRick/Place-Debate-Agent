@@ -1,4 +1,4 @@
-import { END, START, StateGraph } from "@langchain/langgraph";
+import { Command, END, MemorySaver, START, StateGraph, isInterrupted } from "@langchain/langgraph";
 import { createChatModel, type StructuredModel } from "@/lib/agents/model-factory";
 import { DebateResultSchema, type DebateResult } from "@/lib/schemas/debate";
 import { createDebateNodes, type ContextDataSource, type PlaceDataSource } from "./nodes";
@@ -15,6 +15,7 @@ export const DEBATE_GRAPH_NODES = [
   "buildFactPacks",
   "openingRound",
   "attackRound",
+  "userIntervention",
   "rebuttalRound",
   "moderatorSummary",
 ] as const;
@@ -23,6 +24,7 @@ export function createDebateGraph(
   model: StructuredModel = createChatModel(),
   dataSource?: PlaceDataSource,
   contextDataSource?: ContextDataSource,
+  checkpointer = new MemorySaver(),
 ) {
   const nodes = createDebateNodes(model, dataSource, contextDataSource);
 
@@ -37,6 +39,7 @@ export function createDebateGraph(
     .addNode("buildFactPacks", nodes.buildFactPacks)
     .addNode("openingRound", nodes.openingRound)
     .addNode("attackRound", nodes.attackRound)
+    .addNode("userIntervention", nodes.userIntervention)
     .addNode("rebuttalRound", nodes.rebuttalRound)
     .addNode("moderatorSummary", nodes.moderatorSummary)
     .addEdge(START, "parseIntent")
@@ -49,20 +52,50 @@ export function createDebateGraph(
     .addEdge("finalRank", "buildFactPacks")
     .addEdge("buildFactPacks", "openingRound")
     .addEdge("openingRound", "attackRound")
-    .addEdge("attackRound", "rebuttalRound")
+    .addEdge("attackRound", "userIntervention")
+    .addEdge("userIntervention", "rebuttalRound")
     .addEdge("rebuttalRound", "moderatorSummary")
     .addEdge("moderatorSummary", END)
-    .compile();
+    .compile({ checkpointer });
 }
 
-export async function runDebate(
+export type DebateRuntime = { graph: ReturnType<typeof createDebateGraph> };
+export type AwaitingDebate = Pick<DebateResult,
+  "originalQuery" | "userPreference" | "originalPreference" | "currentPreference" | "location" | "weather" | "rawPois" | "filteredPois" | "rankedCandidates" | "selectedCandidates" | "enrichedCandidates" | "factPacks" | "openingMessages" | "attackMessages"
+> & { rebuttalMessages: []; interventionText: ""; preferenceDelta?: undefined; moderatorResult?: undefined };
+export type AwaitingIntervention = {
+  status: "awaiting_intervention";
+  threadId: string;
+  debate: AwaitingDebate;
+  interrupt: unknown;
+};
+
+function newThreadId() { return crypto.randomUUID(); }
+
+export async function startDebate(
   originalQuery: string,
-  model?: StructuredModel,
-  dataSource?: PlaceDataSource,
   gpsCoordinates?: { longitude: number; latitude: number },
-  contextDataSource?: ContextDataSource,
+  runtime: DebateRuntime = getServerDebateRuntime(),
+): Promise<AwaitingIntervention> {
+  const threadId = newThreadId();
+  const output = await runtime.graph.invoke({ originalQuery, gpsCoordinates }, { configurable: { thread_id: threadId } });
+  if (!isInterrupted(output)) throw new Error("Debate completed without the required user intervention checkpoint.");
+  const debate = output as unknown as AwaitingIntervention["debate"];
+  return { status: "awaiting_intervention", threadId, debate, interrupt: output.__interrupt__ };
+}
+
+export async function resumeDebate(
+  threadId: string,
+  intervention: string,
+  runtime: DebateRuntime = getServerDebateRuntime(),
 ): Promise<DebateResult> {
-  const graph = createDebateGraph(model, dataSource, contextDataSource);
-  const output = await graph.invoke({ originalQuery, gpsCoordinates });
+  const output = await runtime.graph.invoke(new Command({ resume: { intervention } }), { configurable: { thread_id: threadId } });
+  if (isInterrupted(output)) throw new Error("Debate is still awaiting user intervention.");
   return DebateResultSchema.parse(output);
+}
+
+let serverRuntime: DebateRuntime | undefined;
+export function getServerDebateRuntime(): DebateRuntime {
+  serverRuntime ??= { graph: createDebateGraph() };
+  return serverRuntime;
 }

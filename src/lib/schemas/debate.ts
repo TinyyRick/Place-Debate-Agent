@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { PlaceCandidateSchema, PlaceFactPackSchema } from "./place";
-import { UserPreferenceSchema } from "./preference";
+import { PreferenceDeltaSchema, UserPreferenceSchema } from "./preference";
 import { LocationContextSchema, WeatherContextSchema } from "./location";
 
 export const OpeningOutputSchema = z.object({
@@ -44,11 +44,16 @@ export const ModeratorResultSchema = z.object({
   rankingByCurrentFit: z.array(RankingItemSchema).min(1),
   tradeoffs: z.array(TradeoffSchema).min(1),
   recommendationSummary: z.string().min(1),
+  preferenceImpact: z.string().min(1),
 });
 
 export const DebateResultSchema = z.object({
   originalQuery: z.string(),
   userPreference: UserPreferenceSchema,
+  originalPreference: UserPreferenceSchema,
+  currentPreference: UserPreferenceSchema,
+  interventionText: z.string(),
+  preferenceDelta: PreferenceDeltaSchema,
   location: LocationContextSchema,
   weather: WeatherContextSchema,
   rawPois: z.array(PlaceCandidateSchema),

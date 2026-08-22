@@ -3,7 +3,7 @@ import { RouteContextSchema, WeatherContextSchema } from "./location";
 
 export const EvidenceSchema = z.object({
   id: z.string().min(1),
-  type: z.enum(["category", "distance", "route_time", "weather", "rating", "location"]),
+  type: z.enum(["category", "distance", "route_time", "weather", "weather_assessment", "rating", "location"]),
   value: z.union([z.string(), z.number()]),
   source: z.string().min(1),
   fetchedAt: z.string().optional(),

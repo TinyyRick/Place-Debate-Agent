@@ -20,6 +20,7 @@ describe("schemas and fixtures", () => {
         rankingByCurrentFit: [{ poiId: "a", reason: "fit" }],
         tradeoffs: [{ poiId: "a", strengths: ["near"], weaknesses: ["unknown hours"] }],
         recommendationSummary: "Compare the tradeoffs and make the final choice.",
+        preferenceImpact: "No intervention was provided, so the preference remains unchanged.",
       }),
     ).not.toThrow();
   });
