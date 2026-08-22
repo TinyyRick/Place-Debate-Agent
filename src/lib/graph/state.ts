@@ -3,6 +3,8 @@ import { z } from "zod";
 import { CandidateDecisionSchema, DebateMessageSchema, ModeratorResultSchema } from "@/lib/schemas/debate";
 import { FinalistScoreSchema, PlaceCandidateSchema, PlaceFactPackSchema } from "@/lib/schemas/place";
 import { PreferenceDeltaSchema, UserPreferenceSchema } from "@/lib/schemas/preference";
+import { UserIntentSchema } from "@/lib/schemas/intent";
+import { SearchPlanSchema } from "@/lib/schemas/search-plan";
 import { CoordinatesSchema, LocationContextSchema, WeatherContextSchema } from "@/lib/schemas/location";
 
 export const DebateStateSchema = new StateSchema({
@@ -13,6 +15,8 @@ export const DebateStateSchema = new StateSchema({
   userPreference: UserPreferenceSchema.optional(),
   originalPreference: UserPreferenceSchema.optional(),
   currentPreference: UserPreferenceSchema.optional(),
+  userIntent: UserIntentSchema.optional(),
+  searchPlan: SearchPlanSchema.optional(),
   interventionText: z.string().default(""),
   preferenceDelta: PreferenceDeltaSchema.optional(),
   requiredEvidenceTypes: z.array(z.enum(["METRO_ACCESS"])).default([]),

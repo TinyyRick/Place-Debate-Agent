@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { RANKING_WEIGHTS } from "@/lib/ranking/config";
-import { createFactPacks, hardFilterPois, rankCandidates, selectDiverseCandidates } from "@/lib/ranking/ranker";
+import { createFactPacks, filterIntentCompatiblePois, hardFilterPois, rankCandidates, selectDiverseCandidates } from "@/lib/ranking/ranker";
 import { PlaceCandidateSchema, type PlaceCandidate } from "@/lib/schemas/place";
 import type { UserPreference } from "@/lib/schemas/preference";
+import type { UserIntent } from "@/lib/schemas/intent";
 
 const preference: UserPreference = {
   activityLevel: "low",
@@ -18,6 +19,7 @@ const preference: UserPreference = {
   rainTolerance: 0.5,
   freeTextConstraints: ["有点意思"],
 };
+const leisureIntent: UserIntent = { primaryGoal: "leisure", requiredCategories: ["park", "museum", "bookstore"], excludedCategories: [], searchTerms: ["游玩"], strictCategoryMatch: false, summary: "普通游玩" };
 
 function candidate(overrides: Partial<PlaceCandidate> & Pick<PlaceCandidate, "id" | "name" | "category" | "typeCode">): PlaceCandidate {
   return PlaceCandidateSchema.parse({
@@ -79,7 +81,7 @@ describe("deterministic ranking and diversity", () => {
       candidate({ id: "museum", name: "南京博物院", category: "科教文化服务;博物馆", typeCode: "140100" }),
       candidate({ id: "park", name: "玄武湖公园", category: "风景名胜;公园广场", typeCode: "110000", rating: 4.5, distanceMeters: 500 }),
       candidate({ id: "bookstore", name: "先锋书店", category: "购物服务;专卖店", typeCode: "060000", rating: 4.7 }),
-    ]), preference);
+    ]), preference, leisureIntent);
 
     expect(ranked.find((item) => item.id === "museum")?.preliminaryScore).toBeTypeOf("number");
     expect(ranked.find((item) => item.id === "museum")?.destinationCategory).toBe("museum");
@@ -91,7 +93,7 @@ describe("deterministic ranking and diversity", () => {
       candidate({ id: "gallery", name: "南京美术馆", category: "科教文化服务;美术馆", typeCode: "140200", rating: 4.8, distanceMeters: 900 }),
       candidate({ id: "park", name: "玄武湖公园", category: "风景名胜;公园广场", typeCode: "110000", rating: 4.4, distanceMeters: 1_100 }),
       candidate({ id: "bookstore", name: "先锋书店", category: "购物服务;专卖店", typeCode: "060000", rating: 4.7, distanceMeters: 1_300 }),
-    ]), preference);
+    ]), preference, leisureIntent);
 
     const selected = selectDiverseCandidates(ranked);
     expect(new Set(selected.map((item) => item.destinationCategory)).size).toBe(3);
@@ -114,7 +116,7 @@ describe("deterministic ranking and diversity", () => {
       candidate({ id: "museum", name: "南京博物院", category: "科教文化服务;博物馆", typeCode: "140100", rating: 4.8 }),
       candidate({ id: "park", name: "玄武湖公园", category: "风景名胜;公园广场", typeCode: "110000", rating: 4.5 }),
       candidate({ id: "bookstore", name: "先锋书店", category: "购物服务;专卖店", typeCode: "060000", rating: 4.7 }),
-    ]), preference)));
+    ]), preference, leisureIntent)));
 
     expect(factPack.evidence.map((evidence) => evidence.id)).toEqual([
       `AMAP_${factPack.id}_CATEGORY`,
@@ -122,5 +124,29 @@ describe("deterministic ranking and diversity", () => {
       `AMAP_${factPack.id}_RATING`,
       `DERIVED_${factPack.id}_ACTIVITY_PROFILE`,
     ]);
+  });
+});
+
+describe("intent compatibility filtering", () => {
+  const pool = hardFilterPois([
+    candidate({ id: "gym", name: "健身工场", category: "体育休闲服务;运动场馆", typeCode: "080101" }),
+    candidate({ id: "mall", name: "金鹰购物中心", category: "购物服务;商场", typeCode: "060100" }),
+    candidate({ id: "library", name: "南京图书馆", category: "科教文化服务;图书馆", typeCode: "140400" }),
+    candidate({ id: "cafe", name: "慢慢来咖啡", category: "餐饮服务;咖啡厅", typeCode: "050500" }),
+    candidate({ id: "park", name: "玄武湖公园", category: "风景名胜;公园广场", typeCode: "110000" }),
+  ]);
+
+  it("keeps only fitness candidates for an explicit gym intent", () => {
+    const result = filterIntentCompatiblePois(pool, { primaryGoal: "fitness", requiredCategories: ["fitness"], excludedCategories: [], searchTerms: ["健身房"], strictCategoryMatch: true, summary: "健身" });
+    expect(result.map((candidate) => candidate.id)).toEqual(["gym"]);
+  });
+
+  it("creates materially different pools for shopping, study and leisure", () => {
+    const shopping = filterIntentCompatiblePois(pool, { primaryGoal: "shopping", requiredCategories: ["shopping"], excludedCategories: [], searchTerms: ["商场"], strictCategoryMatch: true, summary: "逛街" });
+    const study = filterIntentCompatiblePois(pool, { primaryGoal: "study", requiredCategories: ["bookstore", "cultural", "cafe"], excludedCategories: [], searchTerms: ["图书馆"], strictCategoryMatch: true, summary: "学习" });
+    const leisure = filterIntentCompatiblePois(pool, leisureIntent);
+    expect(shopping.map((candidate) => candidate.id)).toEqual(["mall"]);
+    expect(study.map((candidate) => candidate.id)).toEqual(["library", "cafe"]);
+    expect(leisure.map((candidate) => candidate.id)).toEqual(expect.arrayContaining(["gym", "mall", "library", "cafe", "park"]));
   });
 });

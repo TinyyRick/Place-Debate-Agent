@@ -3,17 +3,20 @@ import { moderateDebate } from "@/lib/agents/moderator-agent";
 import { createPlaceAgent } from "@/lib/agents/place-agent-factory";
 import type { StructuredModel } from "@/lib/agents/model-factory";
 import { retrieveNearbyPois } from "@/lib/amap/places";
+import { createSearchPlan } from "@/lib/search/search-plan";
 import { getRoutes } from "@/lib/amap/routes";
 import { resolveLocation } from "@/lib/amap/location";
 import { getCurrentWeather } from "@/lib/amap/weather";
 import { getMetroAccess } from "@/lib/amap/metro";
-import { createFactPacks, finalRankCandidates, hardFilterPois, rankCandidates, scoreFinalistsAfterIntervention, selectDiverseCandidates } from "@/lib/ranking/ranker";
+import { createFactPacks, filterIntentCompatiblePois, finalRankCandidates, hardFilterPois, rankCandidates, scoreFinalistsAfterIntervention, selectDiverseCandidates } from "@/lib/ranking/ranker";
 import type { PlaceCandidate } from "@/lib/schemas/place";
 import type { Coordinates, LocationContext, RouteContext, WeatherContext } from "@/lib/schemas/location";
 import { CandidateDecisionSchema, OpeningOutputSchema, type DebateMessage } from "@/lib/schemas/debate";
 import type { DebateStateSchema } from "./state";
 import { interrupt } from "@langchain/langgraph";
 import { UserPreferenceSchema, type UserPreference } from "@/lib/schemas/preference";
+import { UserIntentSchema, type UserIntent } from "@/lib/schemas/intent";
+import type { SearchPlan } from "@/lib/schemas/search-plan";
 
 function requirePreference(state: typeof DebateStateSchema.State): UserPreference {
   if (!state.currentPreference && !state.userPreference) throw new Error("User preference has not been parsed.");
@@ -23,9 +26,17 @@ function requireOriginalPreference(state: typeof DebateStateSchema.State): UserP
   if (!state.originalPreference) throw new Error("Original user preference has not been parsed.");
   return UserPreferenceSchema.parse(state.originalPreference);
 }
+function requireIntent(state: typeof DebateStateSchema.State): UserIntent {
+  if (!state.userIntent) throw new Error("User intent has not been parsed.");
+  return UserIntentSchema.parse(state.userIntent);
+}
+function requireSearchPlan(state: typeof DebateStateSchema.State): SearchPlan {
+  if (!state.searchPlan) throw new Error("AMap search plan has not been created.");
+  return state.searchPlan;
+}
 
 export interface PlaceDataSource {
-  retrievePlaces: (origin: { longitude: number; latitude: number }) => Promise<PlaceCandidate[]>;
+  retrievePlaces: (origin: { longitude: number; latitude: number }, plan: SearchPlan) => Promise<PlaceCandidate[]>;
 }
 export interface ContextDataSource {
   resolveLocation: (gps?: Coordinates) => Promise<LocationContext>;
@@ -41,28 +52,35 @@ export function createDebateNodes(
 ) {
   return {
     parseIntent: async (state: typeof DebateStateSchema.State) => {
-      const userPreference = await interpretIntent(state.originalQuery, model);
-      return { userPreference, originalPreference: userPreference, currentPreference: userPreference };
+      const { intent: userIntent, preference: userPreference } = await interpretIntent(state.originalQuery, model);
+      return { userIntent, userPreference, originalPreference: userPreference, currentPreference: userPreference };
     },
+
+    createSearchPlan: (state: typeof DebateStateSchema.State) => ({ searchPlan: createSearchPlan(requireIntent(state)) }),
 
     resolveLocation: async (state: typeof DebateStateSchema.State) => ({ location: await contextDataSource.resolveLocation(state.gpsCoordinates) }),
 
     retrievePlaces: async (state: typeof DebateStateSchema.State) => {
       if (!state.location) throw new Error("Location has not been resolved.");
-      return { rawPois: await dataSource.retrievePlaces(state.location.amapCoordinates) };
+      return { rawPois: await dataSource.retrievePlaces(state.location.amapCoordinates, requireSearchPlan(state)) };
     },
 
     filterPlaces: (state: typeof DebateStateSchema.State) => ({
-      filteredPois: hardFilterPois(state.rawPois).filter((candidate) => !state.excludedPoiIds.includes(candidate.id)),
+      filteredPois: filterIntentCompatiblePois(hardFilterPois(state.rawPois), requireIntent(state))
+        .filter((candidate) => !state.excludedPoiIds.includes(candidate.id)),
     }),
 
     preliminaryRank: (state: typeof DebateStateSchema.State) => {
-      const rankedCandidates = rankCandidates(state.filteredPois, requirePreference(state));
+      const rankedCandidates = rankCandidates(state.filteredPois, requirePreference(state), requireIntent(state));
       const selectedCandidates = selectDiverseCandidates(rankedCandidates);
-      if (selectedCandidates.length < 3) {
-        throw new Error(`Only ${selectedCandidates.length} valid destination candidates remained after fallback; at least 3 are required.`);
-      }
       return { rankedCandidates: rankedCandidates.slice(0, 10), selectedCandidates };
+    },
+
+    candidateQualityCheck: (state: typeof DebateStateSchema.State) => {
+      if (state.selectedCandidates.length < 3) {
+        throw new Error(`Only ${state.selectedCandidates.length} candidates match the ${requireIntent(state).primaryGoal} intent; no unrelated fallback is allowed.`);
+      }
+      return {};
     },
 
     enrichRoutesAndWeather: async (state: typeof DebateStateSchema.State) => {
@@ -77,7 +95,7 @@ export function createDebateNodes(
       return { weather, enrichedCandidates };
     },
 
-    finalRank: (state: typeof DebateStateSchema.State) => ({ selectedCandidates: selectDiverseCandidates(finalRankCandidates(state.enrichedCandidates, requirePreference(state))) }),
+    finalRank: (state: typeof DebateStateSchema.State) => ({ selectedCandidates: selectDiverseCandidates(finalRankCandidates(state.enrichedCandidates, requirePreference(state), requireIntent(state))) }),
 
     buildFactPacks: (state: typeof DebateStateSchema.State) => {
       const factPacks = createFactPacks(state.selectedCandidates);
@@ -87,7 +105,7 @@ export function createDebateNodes(
     openingRound: async (state: typeof DebateStateSchema.State) => {
       const preference = requirePreference(state);
       const outputs = await Promise.all(
-        state.factPacks.map((place) => createPlaceAgent(place, preference, model).opening()),
+        state.factPacks.map((place) => createPlaceAgent(place, preference, model, requireIntent(state)).opening()),
       );
       return {
         openingMessages: outputs.map<DebateMessage>((output, index) => ({
@@ -104,7 +122,7 @@ export function createDebateNodes(
       const preference = requirePreference(state);
       const outputs = await Promise.all(
         state.factPacks.map((place) =>
-          createPlaceAgent(place, preference, model).attack(
+          createPlaceAgent(place, preference, model, requireIntent(state)).attack(
             state.factPacks.filter((competitor) => competitor.id !== place.id),
             state.openingMessages,
           ),
@@ -169,7 +187,7 @@ export function createDebateNodes(
       if (decision?.actionType !== "refresh_candidates") throw new Error("Refresh requires an explicit refresh action.");
       const { updatedPreference, preferenceDelta } = await updatePreferenceFromIntervention(requirePreference(state), decision.feedbackText, model);
       if (!state.location) throw new Error("Location has not been resolved.");
-      const rawPois = await dataSource.retrievePlaces(state.location.amapCoordinates);
+      const rawPois = await dataSource.retrievePlaces(state.location.amapCoordinates, requireSearchPlan(state));
       return { rawPois, currentPreference: updatedPreference, userPreference: updatedPreference, preferenceDelta, interventionText: decision.feedbackText, excludedPoiIds: [...state.excludedPoiIds, ...state.factPacks.map((place) => place.id)], previousCandidateRounds: [...state.previousCandidateRounds, state.selectedCandidates], candidateRound: 2, refreshReason: decision.feedbackText };
     },
 
@@ -203,7 +221,7 @@ export function createDebateNodes(
           return {
             attack,
             place,
-            output: await createPlaceAgent(place, currentPreference, model).rebuttal(attack, originalPreference, currentPreference, state.preferenceDelta!),
+            output: await createPlaceAgent(place, currentPreference, model, requireIntent(state)).rebuttal(attack, originalPreference, currentPreference, state.preferenceDelta!),
           };
         }),
       );

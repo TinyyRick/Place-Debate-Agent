@@ -6,10 +6,12 @@ import { DebateStateSchema } from "./state";
 
 export const DEBATE_GRAPH_NODES = [
   "parseIntent",
+  "createSearchPlan",
   "resolveLocation",
   "retrievePlaces",
   "filterPlaces",
   "preliminaryRank",
+  "candidateQualityCheck",
   "enrichRoutesAndWeather",
   "finalRank",
   "buildFactPacks",
@@ -39,10 +41,12 @@ export function createDebateGraph(
 
   return new StateGraph(DebateStateSchema)
     .addNode("parseIntent", nodes.parseIntent)
+    .addNode("createSearchPlan", nodes.createSearchPlan)
     .addNode("resolveLocation", nodes.resolveLocation)
     .addNode("retrievePlaces", nodes.retrievePlaces)
     .addNode("filterPlaces", nodes.filterPlaces)
     .addNode("preliminaryRank", nodes.preliminaryRank)
+    .addNode("candidateQualityCheck", nodes.candidateQualityCheck)
     .addNode("enrichRoutesAndWeather", nodes.enrichRoutesAndWeather)
     .addNode("finalRank", nodes.finalRank)
     .addNode("buildFactPacks", nodes.buildFactPacks)
@@ -61,11 +65,13 @@ export function createDebateGraph(
     .addNode("rebuttalRound", nodes.rebuttalRound)
     .addNode("moderatorSummary", nodes.moderatorSummary)
     .addEdge(START, "parseIntent")
-    .addEdge("parseIntent", "resolveLocation")
+    .addEdge("parseIntent", "createSearchPlan")
+    .addEdge("createSearchPlan", "resolveLocation")
     .addEdge("resolveLocation", "retrievePlaces")
     .addEdge("retrievePlaces", "filterPlaces")
     .addEdge("filterPlaces", "preliminaryRank")
-    .addEdge("preliminaryRank", "enrichRoutesAndWeather")
+    .addEdge("preliminaryRank", "candidateQualityCheck")
+    .addEdge("candidateQualityCheck", "enrichRoutesAndWeather")
     .addEdge("enrichRoutesAndWeather", "finalRank")
     .addEdge("finalRank", "buildFactPacks")
     .addEdge("buildFactPacks", "openingRound")
@@ -88,7 +94,7 @@ export function createDebateGraph(
 
 export type DebateRuntime = { graph: ReturnType<typeof createDebateGraph> };
 export type AwaitingDebate = Pick<DebateResult,
-  "originalQuery" | "userPreference" | "originalPreference" | "currentPreference" | "location" | "weather" | "rawPois" | "filteredPois" | "rankedCandidates" | "selectedCandidates" | "enrichedCandidates" | "factPacks" | "openingMessages" | "attackMessages" | "requiredEvidenceTypes" | "missingEvidenceTypes" | "beforeInterventionScores"
+  "originalQuery" | "userPreference" | "originalPreference" | "currentPreference" | "userIntent" | "searchPlan" | "location" | "weather" | "rawPois" | "filteredPois" | "rankedCandidates" | "selectedCandidates" | "enrichedCandidates" | "factPacks" | "openingMessages" | "attackMessages" | "requiredEvidenceTypes" | "missingEvidenceTypes" | "beforeInterventionScores"
 > & { rebuttalMessages: []; interventionText: ""; preferenceDelta?: undefined; moderatorResult?: undefined };
 export type AwaitingIntervention = {
   status: "awaiting_intervention";

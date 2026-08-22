@@ -1,5 +1,6 @@
 import type { FinalistScore, PlaceFactPack, PlaceCandidate } from "@/lib/schemas/place";
 import type { UserPreference } from "@/lib/schemas/preference";
+import type { UserIntent } from "@/lib/schemas/intent";
 import { FINAL_RANKING_WEIGHTS, INTERVENTION_FINALIST_WEIGHTS, QUALITY_FILTER_CONFIG, RANKING_WEIGHTS } from "./config";
 import { calculatePlaceQuality, classifyDestinationCategory, isDestinationCategory } from "./taxonomy";
 import { derivePlaceActivityProfile } from "./activity-profile";
@@ -68,6 +69,21 @@ export function hardFilterPois(candidates: PlaceCandidate[]) {
   return [...preferred, ...fallback.filter((candidate) => !selectedIds.has(candidate.id))];
 }
 
+/**
+ * This is intentionally a hard, deterministic gate.  It runs after destination
+ * quality filtering so facilities cannot re-enter through an intent fallback.
+ */
+export function filterIntentCompatiblePois(candidates: PlaceCandidate[], intent: UserIntent) {
+  return candidates.flatMap((candidate) => {
+    // `destinationCategory` has a schema default of "other", so always derive
+    // from AMap fields here instead of treating that default as classification.
+    const category = classifyDestinationCategory(candidate);
+    if (intent.excludedCategories.includes(category)) return [];
+    if (intent.strictCategoryMatch && !intent.requiredCategories.includes(category)) return [];
+    return [{ ...candidate, destinationCategory: category }];
+  });
+}
+
 function interestScore(candidate: PlaceCandidate, preference: UserPreference) {
   switch (candidate.destinationCategory) {
     case "park": return preference.naturePreference;
@@ -76,6 +92,7 @@ function interestScore(candidate: PlaceCandidate, preference: UserPreference) {
     case "bookstore": return preference.culturePreference * 0.85 + preference.indoorPreference * 0.15;
     case "cafe": return preference.indoorPreference * 0.6 + 0.35;
     case "cinema": return preference.indoorPreference * 0.5 + preference.culturePreference * 0.5;
+    case "fitness": return preference.activityLevel === "high" ? 1 : preference.activityLevel === "medium" ? 0.82 : 0.62;
     case "entertainment": return 0.55;
     case "shopping": return 0.3;
     default: return 0.2;
@@ -85,7 +102,7 @@ function interestScore(candidate: PlaceCandidate, preference: UserPreference) {
 function activityScore(candidate: PlaceCandidate, activityLevel: UserPreference["activityLevel"]) {
   const indoorFriendly = ["museum", "gallery", "bookstore", "cafe", "cinema", "cultural"].includes(candidate.destinationCategory);
   if (activityLevel === "low") return indoorFriendly ? 1 : candidate.destinationCategory === "shopping" ? 0.75 : 0.55;
-  if (activityLevel === "high") return ["park", "attraction", "entertainment"].includes(candidate.destinationCategory) ? 1 : 0.7;
+  if (activityLevel === "high") return ["park", "attraction", "entertainment", "fitness"].includes(candidate.destinationCategory) ? 1 : 0.7;
   return 0.8;
 }
 
@@ -97,10 +114,17 @@ function noveltyScore(candidate: PlaceCandidate, preference: UserPreference) {
   return ["museum", "gallery", "bookstore", "attraction", "cultural", "entertainment"].includes(candidate.destinationCategory) ? 1 : 0.55;
 }
 
-export function rankCandidates(candidates: PlaceCandidate[], preference: UserPreference) {
+function intentFit(candidate: PlaceCandidate, intent: UserIntent) {
+  const category = candidate.destinationCategory;
+  if (intent.excludedCategories.includes(category)) return 0;
+  if (intent.requiredCategories.includes(category)) return 1;
+  return intent.strictCategoryMatch ? 0 : 0.55;
+}
+
+export function rankCandidates(candidates: PlaceCandidate[], preference: UserPreference, intent: UserIntent) {
   return candidates.map(enrichCandidate).map((candidate) => {
     const distance = Math.max(0, 1 - candidate.distanceMeters / QUALITY_FILTER_CONFIG.fallbackDistanceMeters);
-    const score = RANKING_WEIGHTS.interestFit * interestScore(candidate, preference)
+    const score = RANKING_WEIGHTS.interestFit * (intentFit(candidate, intent) * 0.7 + interestScore(candidate, preference) * 0.3)
       + RANKING_WEIGHTS.distance * distance
       + RANKING_WEIGHTS.activityFit * activityScore(candidate, preference.activityLevel)
       + RANKING_WEIGHTS.placeQuality * (candidate.placeQuality ?? 0)
@@ -109,7 +133,7 @@ export function rankCandidates(candidates: PlaceCandidate[], preference: UserPre
   }).sort((left, right) => (right.preliminaryScore ?? 0) - (left.preliminaryScore ?? 0));
 }
 
-function isIndoor(candidate: PlaceCandidate) { return ["museum", "gallery", "bookstore", "cafe", "cinema", "cultural"].includes(candidate.destinationCategory); }
+function isIndoor(candidate: PlaceCandidate) { return ["museum", "gallery", "bookstore", "cafe", "cinema", "cultural", "fitness", "shopping"].includes(candidate.destinationCategory); }
 function travelFit(candidate: PlaceCandidate, preference: UserPreference) {
   const walking = candidate.route?.walking.durationMinutes;
   const driving = candidate.route?.driving.durationMinutes;
@@ -127,10 +151,10 @@ function weatherFit(candidate: PlaceCandidate, preference: UserPreference) {
   if (hot) return 0.45 + preference.heatTolerance * 0.45;
   return 1;
 }
-export function finalRankCandidates(candidates: PlaceCandidate[], preference: UserPreference) {
+export function finalRankCandidates(candidates: PlaceCandidate[], preference: UserPreference, intent: UserIntent) {
   return candidates.map((candidate) => {
     const base = candidate.preliminaryScore ?? 0;
-    const score = FINAL_RANKING_WEIGHTS.interestFit * interestScore(candidate, preference)
+    const score = FINAL_RANKING_WEIGHTS.interestFit * (intentFit(candidate, intent) * 0.7 + interestScore(candidate, preference) * 0.3)
       + FINAL_RANKING_WEIGHTS.travelFit * travelFit(candidate, preference)
       + FINAL_RANKING_WEIGHTS.activityFit * activityScore(candidate, preference.activityLevel)
       + FINAL_RANKING_WEIGHTS.weatherFit * weatherFit(candidate, preference)

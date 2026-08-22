@@ -17,6 +17,7 @@ export const DestinationCategorySchema = z.enum([
   "bookstore",
   "cafe",
   "cinema",
+  "fitness",
   "shopping",
   "entertainment",
   "cultural",

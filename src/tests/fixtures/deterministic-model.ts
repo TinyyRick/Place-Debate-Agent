@@ -9,6 +9,7 @@ export const deterministicModel: StructuredModel = {
     name: string,
   ): Promise<T> {
     const prompt = JSON.stringify(messages);
+    const userText = JSON.stringify(messages.at(-1));
     const placeId = prompt.includes("代表地点“南京博物院”")
       ? "nanjing-museum"
       : prompt.includes("代表地点“先锋书店”")
@@ -30,14 +31,24 @@ export const deterministicModel: StructuredModel = {
         : "attack-nanjing-museum-xuanwu-lake";
     const attackerPoiId = responseToAttackId.split("-").slice(1, -2).join("-");
     const values: Record<string, unknown> = {
-      user_preference: {
-        activityLevel: "low",
-        indoorPreference: 0.7,
-        naturePreference: 0.6,
-        culturePreference: 0.8,
-        budgetLevel: "medium",
-        companions: "solo",
-        freeTextConstraints: ["不要太累", "有点意思"],
+      intent_interpretation: {
+        intent: {
+          primaryGoal: userText.includes("健身") ? "fitness" : userText.includes("逛街") ? "shopping" : userText.includes("学习") ? "study" : "leisure",
+          requiredCategories: userText.includes("健身") ? ["fitness"] : userText.includes("逛街") ? ["shopping"] : userText.includes("学习") ? ["bookstore", "cultural", "cafe"] : ["park", "museum", "bookstore"],
+          excludedCategories: [],
+          searchTerms: ["测试"],
+          strictCategoryMatch: !prompt.includes("想出去走走"),
+          summary: "测试意图",
+        },
+        preference: {
+          activityLevel: "low",
+          indoorPreference: 0.7,
+          naturePreference: 0.6,
+          culturePreference: 0.8,
+          budgetLevel: "medium",
+          companions: "solo",
+          freeTextConstraints: ["不要太累", "有点意思"],
+        },
       },
       preference_update: {
         updatedPreference: {

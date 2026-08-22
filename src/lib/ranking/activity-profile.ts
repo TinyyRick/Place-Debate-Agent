@@ -8,6 +8,7 @@ export function derivePlaceActivityProfile(category: DestinationCategory): Place
     gallery: { indoorOutdoor: "indoor", movementStyle: "walk_around", weatherExposure: "low", activityType: "参观类活动" },
     bookstore: { indoorOutdoor: "indoor", movementStyle: "mixed", weatherExposure: "low", activityType: "阅读零售类活动" },
     cinema: { indoorOutdoor: "indoor", movementStyle: "mostly_seated", weatherExposure: "low", activityType: "观影类活动" },
+    fitness: { indoorOutdoor: "indoor", movementStyle: "light_active", weatherExposure: "low", activityType: "健身运动类活动" },
     park: { indoorOutdoor: "outdoor", movementStyle: "walk_around", weatherExposure: "high", activityType: "公园游逛类活动" },
     attraction: { indoorOutdoor: "outdoor", movementStyle: "walk_around", weatherExposure: "high", activityType: "景点游逛类活动" },
     cultural: { indoorOutdoor: "mixed", movementStyle: "walk_around", weatherExposure: "medium", activityType: "文化活动" },

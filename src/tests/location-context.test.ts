@@ -33,7 +33,7 @@ describe("AMap location context normalization", () => {
     const outdoor = PlaceCandidateSchema.parse({ ...base, id: "park", name: "公园", category: "公园", typeCode: "110000" });
     const indoor = PlaceCandidateSchema.parse({ ...base, id: "museum", name: "博物馆", category: "博物馆", typeCode: "140100", destinationCategory: "museum" });
     const preference = { activityLevel: "low" as const, indoorPreference: 0.8, naturePreference: 0.5, culturePreference: 0.8, budgetLevel: "flexible" as const, companions: "solo" as const, transportPreference: "driving" as const, movementPreference: "flexible" as const, distanceTolerance: "near" as const, heatTolerance: 0, rainTolerance: 0, freeTextConstraints: ["有点意思"] };
-    const ranked = finalRankCandidates([outdoor, indoor], preference);
+    const ranked = finalRankCandidates([outdoor, indoor], preference, { primaryGoal: "leisure", requiredCategories: ["park", "museum"], excludedCategories: [], searchTerms: ["游玩"], strictCategoryMatch: false, summary: "普通游玩" });
     expect(ranked[0].id).toBe("museum");
   });
 });

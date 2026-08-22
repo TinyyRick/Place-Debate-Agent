@@ -1,3 +1,4 @@
+import { IntentInterpretationSchema, UserIntentSchema, type UserIntent } from "@/lib/schemas/intent";
 import { PreferenceDeltaSchema, UserPreferenceSchema, type PreferenceDelta, type UserPreference } from "@/lib/schemas/preference";
 import type { StructuredModel } from "./model-factory";
 import { z } from "zod";
@@ -7,19 +8,30 @@ const PreferenceUpdateSchema = z.object({ updatedPreference: UserPreferenceSchem
 export async function interpretIntent(
   originalQuery: string,
   model: StructuredModel,
-): Promise<UserPreference> {
-  return model.invoke(
-    UserPreferenceSchema,
+): Promise<{ intent: UserIntent; preference: UserPreference }> {
+  const interpretation = await model.invoke(
+    IntentInterpretationSchema,
     [
       {
         role: "system",
         content:
-          "你是地点决策助手的意图解释器。把用户自然语言转换为结构化偏好。数值偏好范围为 0 到 1；只提取用户表达或可谨慎推断的约束，不添加地点事实。",
+          "你是地点决策助手的意图解释器。输出 intent 与 preference：intent 是用户想完成的事情，必须区分 fitness(健身运动)、shopping(室内逛街购物)、study(学习阅读) 和 leisure(普通游玩)；preference 是该事情应如何进行。若用户明确说健身、逛街购物、学习阅读，strictCategoryMatch 必须为 true，requiredCategories 只能包含匹配任务的地点类别；不得把偏好、地点事实或建议混入 intent。数值偏好范围为 0 到 1；只提取用户表达或可谨慎推断的约束。",
       },
       { role: "user", content: originalQuery },
     ],
-    "user_preference",
+    "intent_interpretation",
   );
+  return { intent: normalizeExplicitIntent(originalQuery, interpretation.intent), preference: UserPreferenceSchema.parse(interpretation.preference) };
+}
+
+/** Explicit task words are guardrails: a structured model may not dilute them into generic leisure. */
+function normalizeExplicitIntent(query: string, intent: UserIntent): UserIntent {
+  const withGoal = (primaryGoal: UserIntent["primaryGoal"], requiredCategories: UserIntent["requiredCategories"], terms: string[]) =>
+    UserIntentSchema.parse({ ...intent, primaryGoal, requiredCategories, excludedCategories: [], searchTerms: terms, strictCategoryMatch: true });
+  if (/健身房|健身|瑜伽|游泳/.test(query)) return withGoal("fitness", ["fitness"], ["健身房", "健身", "运动馆"]);
+  if (/逛街|购物|商场|买东西/.test(query)) return withGoal("shopping", ["shopping"], ["商场", "购物中心", "百货"]);
+  if (/学习|看书|自习|阅读/.test(query)) return withGoal("study", ["bookstore", "cultural", "cafe"], ["图书馆", "书店", "书局", "安静咖啡馆"]);
+  return UserIntentSchema.parse(intent);
 }
 
 function sameValue(left: unknown, right: unknown) { return JSON.stringify(left) === JSON.stringify(right); }

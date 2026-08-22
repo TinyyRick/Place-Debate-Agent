@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { PlaceCandidateSchema, type PlaceCandidate } from "@/lib/schemas/place";
 import type { Coordinates } from "@/lib/schemas/location";
+import type { SearchPlan } from "@/lib/schemas/search-plan";
 
 export const NANJING_TEST_LOCATION = {
   longitude: 118.796877,
@@ -48,29 +49,32 @@ function straightLineDistanceMeters(longitude: number, latitude: number, origin:
   return Math.round(2 * earthRadiusMeters * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
 }
 
-export async function retrieveNearbyPois(origin: Coordinates = NANJING_TEST_LOCATION): Promise<PlaceCandidate[]> {
+export async function retrieveNearbyPois(origin: Coordinates = NANJING_TEST_LOCATION, plan: SearchPlan): Promise<PlaceCandidate[]> {
   const key = process.env.AMAP_WEB_SERVICE_KEY;
   if (!key) throw new Error("AMAP_WEB_SERVICE_KEY is not configured in .env.local.");
 
-  const url = new URL("https://restapi.amap.com/v5/place/around");
-  url.search = new URLSearchParams({
-    key,
-    location: `${origin.longitude},${origin.latitude}`,
-    radius: "8000",
-    types: "110000|140000|060000|050000|080000",
-    page_size: "25",
-    page_num: "1",
-    show_fields: "business,children,indoor",
-  }).toString();
+  const responses = await Promise.all(plan.queries.map(async (query) => {
+    const url = new URL("https://restapi.amap.com/v5/place/around");
+    url.search = new URLSearchParams({
+      key,
+      location: `${origin.longitude},${origin.latitude}`,
+      radius: String(plan.radiusMeters),
+      types: query.typeCodes,
+      page_size: "25",
+      page_num: "1",
+      show_fields: "business,children,indoor",
+    }).toString();
+    const response = await fetch(url, { cache: "no-store" });
+    if (!response.ok) throw new Error(`AMap ${query.label} POI request failed with HTTP ${response.status}.`);
+    const payload = AMapResponseSchema.parse(await response.json());
+    if (payload.status !== "1") throw new Error(`AMap ${query.label} POI request failed: ${payload.info} (${payload.infocode}).`);
+    return payload.pois;
+  }));
 
-  const response = await fetch(url, { cache: "no-store" });
-  if (!response.ok) throw new Error(`AMap nearby POI request failed with HTTP ${response.status}.`);
-  const payload = AMapResponseSchema.parse(await response.json());
-  if (payload.status !== "1") throw new Error(`AMap nearby POI request failed: ${payload.info} (${payload.infocode}).`);
-
-  return payload.pois.flatMap((poi) => {
+  const byId = new Map<string, PlaceCandidate>();
+  for (const poi of responses.flat()) {
     const location = parseLocation(poi.location);
-    if (!poi.id || !poi.name || !poi.type || !poi.typecode || !location) return [];
+    if (!poi.id || !poi.name || !poi.type || !poi.typecode || !location) continue;
     const rating = toFiniteNumber(poi.business?.rating);
     const candidate = {
       id: poi.id,
@@ -87,6 +91,7 @@ export async function retrieveNearbyPois(origin: Coordinates = NANJING_TEST_LOCA
       childCount: poi.children?.length ?? 0,
       ...(poi.indoor?.cpid ? { indoorCpid: poi.indoor.cpid } : {}),
     };
-    return [PlaceCandidateSchema.parse(candidate)];
-  });
+    byId.set(poi.id, PlaceCandidateSchema.parse(candidate));
+  }
+  return [...byId.values()];
 }
