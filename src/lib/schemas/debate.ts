@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { PlaceFactPackSchema } from "./place";
+import { PlaceCandidateSchema, PlaceFactPackSchema } from "./place";
 import { UserPreferenceSchema } from "./preference";
 
 export const OpeningOutputSchema = z.object({
@@ -42,6 +42,9 @@ export const ModeratorResultSchema = z.object({
 export const DebateResultSchema = z.object({
   originalQuery: z.string(),
   userPreference: UserPreferenceSchema,
+  rawPois: z.array(PlaceCandidateSchema),
+  filteredPois: z.array(PlaceCandidateSchema),
+  rankedCandidates: z.array(PlaceCandidateSchema),
   factPacks: z.array(PlaceFactPackSchema),
   openingMessages: z.array(DebateMessageSchema),
   attackMessages: z.array(DebateMessageSchema),

@@ -1,4 +1,10 @@
-import { PlaceFactPackSchema, type PlaceFactPack } from "@/lib/schemas/place";
+import { PlaceFactPackSchema, PlaceCandidateSchema, type PlaceCandidate, type PlaceFactPack } from "@/lib/schemas/place";
+
+export const mockCandidates: PlaceCandidate[] = PlaceCandidateSchema.array().parse([
+  { id: "xuanwu-lake", name: "玄武湖", category: "park", typeCode: "110000", longitude: 118.8, latitude: 32.08, address: "", distanceMeters: 2100, rating: 4.7 },
+  { id: "nanjing-museum", name: "南京博物院", category: "museum", typeCode: "140000", longitude: 118.84, latitude: 32.04, address: "", distanceMeters: 4200, rating: 4.8 },
+  { id: "pioneer-bookstore", name: "先锋书店", category: "bookstore", typeCode: "060000", longitude: 118.82, latitude: 32.05, address: "", distanceMeters: 3700, rating: 4.6 },
+]);
 
 export const mockPlaces: PlaceFactPack[] = PlaceFactPackSchema.array().parse([
   {

@@ -15,12 +15,14 @@ export const deterministicModel: StructuredModel = {
         ? "pioneer-bookstore"
         : "xuanwu-lake";
     const ownEvidence = {
-      "xuanwu-lake": "XW_DISTANCE",
-      "nanjing-museum": "NM_WEATHER",
-      "pioneer-bookstore": "PB_WEATHER",
+      "xuanwu-lake": "AMAP_xuanwu-lake_DISTANCE",
+      "nanjing-museum": "AMAP_nanjing-museum_CATEGORY",
+      "pioneer-bookstore": "AMAP_pioneer-bookstore_CATEGORY",
     }[placeId];
     const attackTarget = placeId === "nanjing-museum" ? "xuanwu-lake" : "nanjing-museum";
-    const attackEvidence = placeId === "nanjing-museum" ? "XW_WEATHER" : "NM_ROUTE";
+    const attackEvidence = placeId === "nanjing-museum"
+      ? "AMAP_xuanwu-lake_CATEGORY"
+      : "AMAP_nanjing-museum_CATEGORY";
     const values: Record<string, unknown> = {
       user_preference: {
         activityLevel: "low",

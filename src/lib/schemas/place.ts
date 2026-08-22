@@ -7,16 +7,30 @@ export const EvidenceSchema = z.object({
   source: z.string().min(1),
 });
 
+export const PlaceCandidateSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  category: z.string().min(1),
+  typeCode: z.string().min(1),
+  longitude: z.number().finite(),
+  latitude: z.number().finite(),
+  address: z.string(),
+  distanceMeters: z.number().nonnegative(),
+  rating: z.number().min(0).max(5).optional(),
+  preliminaryScore: z.number().min(0).max(1).optional(),
+});
+
 export const PlaceFactPackSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
   category: z.string().min(1),
   distanceMeters: z.number().nonnegative(),
-  travelTimeMinutes: z.number().nonnegative(),
-  weather: z.string().min(1),
-  rating: z.number().min(0).max(5),
+  travelTimeMinutes: z.number().nonnegative().optional(),
+  weather: z.string().min(1).optional(),
+  rating: z.number().min(0).max(5).optional(),
   evidence: z.array(EvidenceSchema).min(1),
 });
 
 export type Evidence = z.infer<typeof EvidenceSchema>;
+export type PlaceCandidate = z.infer<typeof PlaceCandidateSchema>;
 export type PlaceFactPack = z.infer<typeof PlaceFactPackSchema>;

@@ -52,9 +52,9 @@ export default function Home() {
   return (
     <main>
       <header>
-        <p className="eyebrow">Mock workflow · LangGraph</p>
+        <p className="eyebrow">Live POI workflow · LangGraph</p>
         <h1>Place Debate Agent</h1>
-        <p className="intro">输入你的偏好，让三个候选地点基于固定证据进行三轮辩论。</p>
+        <p className="intro">输入你的偏好，让附近真实候选地点基于证据进行三轮辩论。</p>
       </header>
 
       <section>
@@ -78,8 +78,8 @@ export default function Home() {
               {result.factPacks.map((place) => (
                 <article className="candidate" key={place.id}>
                   <h3>{place.name}</h3>
-                  <p>{place.category} · {place.distanceMeters} m · {place.travelTimeMinutes} min</p>
-                  <p>{place.weather} · ⭐ {place.rating}</p>
+                  <p>{place.category} · {place.distanceMeters} m</p>
+                  <p>{place.rating === undefined ? "评分未知" : `⭐ ${place.rating}`}</p>
                 </article>
               ))}
             </div>

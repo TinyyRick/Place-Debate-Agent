@@ -2,7 +2,9 @@ import { interpretIntent } from "@/lib/agents/intent-agent";
 import { moderateDebate } from "@/lib/agents/moderator-agent";
 import { createPlaceAgent } from "@/lib/agents/place-agent-factory";
 import type { StructuredModel } from "@/lib/agents/model-factory";
-import { mockPlaces } from "@/lib/mock/places";
+import { retrieveNearbyPois } from "@/lib/amap/places";
+import { createFactPacks, hardFilterPois, rankCandidates } from "@/lib/ranking/ranker";
+import type { PlaceCandidate } from "@/lib/schemas/place";
 import type { DebateMessage } from "@/lib/schemas/debate";
 import type { DebateStateSchema } from "./state";
 
@@ -11,13 +13,36 @@ function requirePreference(state: typeof DebateStateSchema.State) {
   return state.userPreference;
 }
 
-export function createDebateNodes(model: StructuredModel) {
+export interface PlaceDataSource {
+  retrievePlaces: () => Promise<PlaceCandidate[]>;
+}
+
+export function createDebateNodes(
+  model: StructuredModel,
+  dataSource: PlaceDataSource = { retrievePlaces: retrieveNearbyPois },
+) {
   return {
     parseIntent: async (state: typeof DebateStateSchema.State) => ({
       userPreference: await interpretIntent(state.originalQuery, model),
     }),
 
-    loadMockPlaces: () => ({ factPacks: mockPlaces }),
+    retrievePlaces: async () => ({ rawPois: await dataSource.retrievePlaces() }),
+
+    filterPlaces: (state: typeof DebateStateSchema.State) => ({
+      filteredPois: hardFilterPois(state.rawPois),
+    }),
+
+    rankPlaces: (state: typeof DebateStateSchema.State) => {
+      const rankedCandidates = rankCandidates(state.filteredPois, requirePreference(state)).slice(0, 3);
+      if (rankedCandidates.length < 3) {
+        throw new Error(`Only ${rankedCandidates.length} AMap candidates remained after filtering; at least 3 are required.`);
+      }
+      return { rankedCandidates };
+    },
+
+    enrichFactPacks: (state: typeof DebateStateSchema.State) => ({
+      factPacks: createFactPacks(state.rankedCandidates),
+    }),
 
     openingRound: async (state: typeof DebateStateSchema.State) => {
       const preference = requirePreference(state);
