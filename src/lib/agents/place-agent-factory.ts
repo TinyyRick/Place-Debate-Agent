@@ -22,6 +22,12 @@ function assertEvidenceIds(ids: string[], allowedPacks: PlaceFactPack[]) {
     throw new Error(`Agent returned evidence outside its FactPacks: ${invalid.join(", ")}`);
   }
 }
+function enforceEvidenceBudget<T extends { evidenceIds: string[] }>(output: T): T { return { ...output, evidenceIds: output.evidenceIds.slice(0, 3) }; }
+function assertMetroGrounding(claim: string, packs: PlaceFactPack[]) {
+  if (/地铁附近|靠近地铁|地铁方便|地铁可达|地铁便利/.test(claim) && !packs.some((pack) => pack.evidence.some((item) => item.type === "metro_access"))) {
+    throw new Error("Claim mentioned metro access without METRO_ACCESS evidence.");
+  }
+}
 
 function normalizedClaim(value: string) { return value.replaceAll(/\s+/g, "").trim(); }
 
@@ -37,7 +43,7 @@ export function createPlaceAgent(
   userPreference: UserPreference,
   model: StructuredModel = createChatModel(),
 ) {
-  const identity = `你代表地点“${factPack.name}”，目标是基于证据说服用户，但必须诚实。只可使用给定 FactPack；事实性论点必须引用 evidenceIds，并且只能逐字陈述 category、distanceMeters、route.walking/driving.durationMinutes、weather.weather/temperatureC、weather.assessment.outdoorComfort、locationLabel、rating 及其对应 evidence。WEATHER_ASSESSMENT 是唯一可用的天气舒适度结论，所有地点必须一致使用它；只能讨论该天气对户外舒适度的影响。CATEGORY 仅可说活动类型与用户偏好可能匹配，且 CATEGORY=cafe 只能表述为“餐饮休闲类活动”，绝不可说安静、氛围好、适合学习或任何环境品质。DISTANCE 很近也只能谨慎说距离较近，不能说出门即达、几乎不用走。RATING 仅可说公开评分数值或相对高低。永远不得由这些信息推导“有趣/趣味性有保障/体验好坏/文化价值/室内设施”等未提供事实。不得补充设施、展览、景观细节、阴凉处、活动内容、营业状态、拥挤度或任何未提供事实；缺失信息必须视为未知。可以解释这些已知事实与用户偏好的取舍。输出简短中文。`;
+  const identity = `你代表地点“${factPack.name}”，目标是基于证据说服用户，但必须诚实。只可使用给定 FactPack；METRO_ACCESS 是谈论地铁距离的唯一依据，缺失时只能说无法判断。PlaceActivityProfile 是 derived_category_rule，只能以“按场所类型通常更偏……”的谨慎方式说明活动类型，不能冒充高德原始事实。WEATHER_ASSESSMENT 是唯一可用的天气舒适度结论。CATEGORY=cafe 只能表述为“餐饮休闲类活动”，绝不可说安静、氛围好、适合学习。不得补充设施、展览、景观细节、拥挤度或任何未提供事实；缺失信息必须视为未知。输出简短中文。`;
 
   return {
     async opening(): Promise<OpeningOutput> {
@@ -52,9 +58,8 @@ export function createPlaceAgent(
         ],
         "place_opening",
       );
-      assertClaimSafety(output.claim);
-      assertEvidenceIds(output.evidenceIds, [factPack]);
-      return output;
+      const bounded = enforceEvidenceBudget(output); assertClaimSafety(bounded.claim);
+      assertEvidenceIds(bounded.evidenceIds, [factPack]); assertMetroGrounding(bounded.claim, [factPack]); return bounded;
     },
 
     async attack(competitors: PlaceFactPack[], openings: DebateMessage[]): Promise<AttackOutput> {
@@ -69,11 +74,10 @@ export function createPlaceAgent(
         ],
         "place_attack",
       );
-      assertClaimSafety(output.claim);
+      const bounded = enforceEvidenceBudget(output); assertClaimSafety(bounded.claim);
       const target = competitors.find((item) => item.id === output.targetPoiId);
       if (!target) throw new Error(`${factPack.name} attacked an unknown competitor.`);
-      assertEvidenceIds(output.evidenceIds, [target]);
-      return output;
+      assertEvidenceIds(bounded.evidenceIds, [target]); assertMetroGrounding(bounded.claim, [target]); return bounded;
     },
 
     async rebuttal(
@@ -99,9 +103,8 @@ export function createPlaceAgent(
       if (normalizedClaim(output.claim) === normalizedClaim(attack.claim)) {
         throw new Error(`Rebuttal for attack ${attack.id} copied the attack claim.`);
       }
-      assertClaimSafety(output.claim);
-      assertEvidenceIds(output.evidenceIds, [factPack]);
-      return output;
+      const bounded = enforceEvidenceBudget(output); assertClaimSafety(bounded.claim);
+      assertEvidenceIds(bounded.evidenceIds, [factPack]); assertMetroGrounding(bounded.claim, [factPack]); return bounded;
     },
   };
 }

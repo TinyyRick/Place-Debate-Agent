@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { PlaceCandidateSchema, PlaceFactPackSchema } from "./place";
+import { FinalistScoreSchema, PlaceCandidateSchema, PlaceFactPackSchema } from "./place";
 import { PreferenceDeltaSchema, UserPreferenceSchema } from "./preference";
 import { LocationContextSchema, WeatherContextSchema } from "./location";
 
@@ -54,6 +54,10 @@ export const DebateResultSchema = z.object({
   currentPreference: UserPreferenceSchema,
   interventionText: z.string(),
   preferenceDelta: PreferenceDeltaSchema,
+  requiredEvidenceTypes: z.array(z.enum(["METRO_ACCESS"])),
+  missingEvidenceTypes: z.array(z.enum(["METRO_ACCESS"])),
+  beforeInterventionScores: z.array(FinalistScoreSchema),
+  afterInterventionScores: z.array(FinalistScoreSchema),
   location: LocationContextSchema,
   weather: WeatherContextSchema,
   rawPois: z.array(PlaceCandidateSchema),

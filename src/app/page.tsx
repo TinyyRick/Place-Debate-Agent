@@ -68,13 +68,13 @@ export default function Home() {
       <button disabled={loading} onClick={useMyLocation} type="button">使用我的位置</button><p className="muted">📍 {locationStatus}</p>{error ? <p className="error">{error}</p> : null}
     </section>
     {activeDebate ? <div className="results">
-      <section><h2>Parsed Preference</h2><pre>{JSON.stringify(activeDebate.userPreference, null, 2)}</pre></section>
+      <section><h2>Parsed Preference</h2><pre>{JSON.stringify(activeDebate.originalPreference, null, 2)}</pre></section>
       <section><p>📍 {activeDebate.location.formattedAddress}</p><p>天气：{activeDebate.weather.available ? `${activeDebate.weather.temperatureC ?? ""}°C · ${activeDebate.weather.weather}` : "暂无天气数据"}</p></section>
       <section><h2>Candidates</h2><div className="candidate-grid">{activeDebate.factPacks.map((place) => <article className="candidate" key={place.id}><h3>{place.name}</h3><p>{place.category} · {place.distanceMeters} m</p><p>步行 {place.route?.walking.durationMinutes ?? "未知"} min · 驾车 {place.route?.driving.durationMinutes ?? "未知"} min · {place.rating === undefined ? "评分未知" : `⭐ ${place.rating}`}</p></article>)}</div></section>
       <section><h2>Round 1 · Opening</h2><MessageList messages={activeDebate.openingMessages} names={names} /></section>
       <section><h2>Round 2 · Attack</h2><MessageList messages={activeDebate.attackMessages} names={names} /></section>
       {awaiting ? <section><p>在他们继续之前，你有什么想补充的吗？</p><textarea aria-label="有什么想补充的吗？" value={intervention} onChange={(event) => setIntervention(event.target.value)} rows={3} placeholder="例如：其实我不怕热，我更想看历史建筑。" /><button disabled={loading} onClick={() => void resumeDebate()} type="button">加入我的想法</button><button disabled={loading} onClick={() => void resumeDebate("")} type="button">不补充，继续</button></section> : null}
-      {result ? <><section><h2>Preference Update</h2><p>你补充了：{result.interventionText || "没有新增偏好"}</p><ul>{result.preferenceDelta.changedFields.map((change) => <li key={change.field}>{change.field}: {JSON.stringify(change.before)} → {JSON.stringify(change.after)}</li>)}</ul></section>
+      {result ? <><section><h2>Preference Update</h2><p>你补充了：{result.interventionText || "没有新增偏好"}</p><ul>{result.preferenceDelta.changedFields.map((change) => <li key={change.field}>{change.field}: {JSON.stringify(change.before)} → {JSON.stringify(change.after)}</li>)}</ul><h3>Current Preference</h3><pre>{JSON.stringify(result.currentPreference, null, 2)}</pre></section>
       <section><h2>Round 3 · Rebuttal</h2><MessageList messages={result.rebuttalMessages} names={names} /></section>
       <section><h2>Moderator Summary</h2><p>{result.moderatorResult.recommendationSummary}</p><p>{result.moderatorResult.preferenceImpact}</p><h3>当前匹配度</h3><ol>{result.moderatorResult.rankingByCurrentFit.map((item) => <li key={item.poiId}><strong>{names.get(item.poiId)}</strong> — {item.reason}</li>)}</ol><h3>冲突轴</h3><ul>{result.moderatorResult.conflictAxes.map((axis) => <li key={axis}>{axis}</li>)}</ul></section></> : null}
     </div> : null}

@@ -12,6 +12,8 @@ const preference: UserPreference = {
   budgetLevel: "flexible",
   companions: "solo",
   transportPreference: "flexible",
+  movementPreference: "flexible",
+  distanceTolerance: "near",
   heatTolerance: 0.5,
   rainTolerance: 0.5,
   freeTextConstraints: ["有点意思"],
@@ -118,6 +120,7 @@ describe("deterministic ranking and diversity", () => {
       `AMAP_${factPack.id}_CATEGORY`,
       `AMAP_${factPack.id}_DISTANCE`,
       `AMAP_${factPack.id}_RATING`,
+      `DERIVED_${factPack.id}_ACTIVITY_PROFILE`,
     ]);
   });
 });

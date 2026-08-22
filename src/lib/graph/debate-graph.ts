@@ -16,6 +16,10 @@ export const DEBATE_GRAPH_NODES = [
   "openingRound",
   "attackRound",
   "userIntervention",
+  "updatePreference",
+  "detectMissingEvidence",
+  "enrichInterventionEvidence",
+  "rerankFinalists",
   "rebuttalRound",
   "moderatorSummary",
 ] as const;
@@ -40,6 +44,10 @@ export function createDebateGraph(
     .addNode("openingRound", nodes.openingRound)
     .addNode("attackRound", nodes.attackRound)
     .addNode("userIntervention", nodes.userIntervention)
+    .addNode("updatePreference", nodes.updatePreference)
+    .addNode("detectMissingEvidence", nodes.detectMissingEvidence)
+    .addNode("enrichInterventionEvidence", nodes.enrichInterventionEvidence)
+    .addNode("rerankFinalists", nodes.rerankFinalists)
     .addNode("rebuttalRound", nodes.rebuttalRound)
     .addNode("moderatorSummary", nodes.moderatorSummary)
     .addEdge(START, "parseIntent")
@@ -53,7 +61,11 @@ export function createDebateGraph(
     .addEdge("buildFactPacks", "openingRound")
     .addEdge("openingRound", "attackRound")
     .addEdge("attackRound", "userIntervention")
-    .addEdge("userIntervention", "rebuttalRound")
+    .addEdge("userIntervention", "updatePreference")
+    .addEdge("updatePreference", "detectMissingEvidence")
+    .addConditionalEdges("detectMissingEvidence", (state) => state.missingEvidenceTypes.includes("METRO_ACCESS") ? "enrichInterventionEvidence" : "rerankFinalists")
+    .addEdge("enrichInterventionEvidence", "rerankFinalists")
+    .addEdge("rerankFinalists", "rebuttalRound")
     .addEdge("rebuttalRound", "moderatorSummary")
     .addEdge("moderatorSummary", END)
     .compile({ checkpointer });
@@ -61,7 +73,7 @@ export function createDebateGraph(
 
 export type DebateRuntime = { graph: ReturnType<typeof createDebateGraph> };
 export type AwaitingDebate = Pick<DebateResult,
-  "originalQuery" | "userPreference" | "originalPreference" | "currentPreference" | "location" | "weather" | "rawPois" | "filteredPois" | "rankedCandidates" | "selectedCandidates" | "enrichedCandidates" | "factPacks" | "openingMessages" | "attackMessages"
+  "originalQuery" | "userPreference" | "originalPreference" | "currentPreference" | "location" | "weather" | "rawPois" | "filteredPois" | "rankedCandidates" | "selectedCandidates" | "enrichedCandidates" | "factPacks" | "openingMessages" | "attackMessages" | "requiredEvidenceTypes" | "missingEvidenceTypes" | "beforeInterventionScores"
 > & { rebuttalMessages: []; interventionText: ""; preferenceDelta?: undefined; moderatorResult?: undefined };
 export type AwaitingIntervention = {
   status: "awaiting_intervention";

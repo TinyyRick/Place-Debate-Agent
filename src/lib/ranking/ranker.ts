@@ -1,10 +1,12 @@
-import type { PlaceFactPack, PlaceCandidate } from "@/lib/schemas/place";
+import type { FinalistScore, PlaceFactPack, PlaceCandidate } from "@/lib/schemas/place";
 import type { UserPreference } from "@/lib/schemas/preference";
-import { FINAL_RANKING_WEIGHTS, QUALITY_FILTER_CONFIG, RANKING_WEIGHTS } from "./config";
+import { FINAL_RANKING_WEIGHTS, INTERVENTION_FINALIST_WEIGHTS, QUALITY_FILTER_CONFIG, RANKING_WEIGHTS } from "./config";
 import { calculatePlaceQuality, classifyDestinationCategory, isDestinationCategory } from "./taxonomy";
+import { derivePlaceActivityProfile } from "./activity-profile";
 
 export { RANKING_WEIGHTS } from "./config";
 export { FINAL_RANKING_WEIGHTS } from "./config";
+export { INTERVENTION_FINALIST_WEIGHTS } from "./config";
 
 function hasExcludedTerm(candidate: PlaceCandidate) {
   return QUALITY_FILTER_CONFIG.excludedNameTerms.some((term) => candidate.name.includes(term))
@@ -19,7 +21,7 @@ function hasSubPoiSuffix(candidate: PlaceCandidate) {
 
 function enrichCandidate(candidate: PlaceCandidate) {
   const destinationCategory = classifyDestinationCategory(candidate);
-  return { ...candidate, destinationCategory, placeQuality: calculatePlaceQuality(candidate, destinationCategory) };
+  return { ...candidate, destinationCategory, placeQuality: calculatePlaceQuality(candidate, destinationCategory), activityProfile: derivePlaceActivityProfile(destinationCategory) };
 }
 
 function isEligibleDestination(candidate: PlaceCandidate, distanceLimit: number, allowOther = false) {
@@ -138,6 +140,33 @@ export function finalRankCandidates(candidates: PlaceCandidate[], preference: Us
   }).sort((left, right) => (right.preliminaryScore ?? 0) - (left.preliminaryScore ?? 0));
 }
 
+function interventionActivityFit(candidate: PlaceCandidate, preference: UserPreference) {
+  const profile = candidate.activityProfile ?? derivePlaceActivityProfile(candidate.destinationCategory);
+  const indoor = preference.indoorPreference * (profile.indoorOutdoor === "indoor" ? 1 : profile.indoorOutdoor === "mixed" ? 0.55 : 0.1);
+  const movement = preference.movementPreference === "flexible" ? 0.7 : preference.movementPreference === profile.movementStyle ? 1 : profile.movementStyle === "mixed" ? 0.65 : 0.15;
+  return (indoor + movement) / 2;
+}
+function interventionTransitFit(candidate: PlaceCandidate, preference: UserPreference) {
+  if (preference.transportPreference !== "metro") return 0.5;
+  if (!candidate.metroAccess?.available || candidate.metroAccess.distanceMeters === undefined) return 0.1;
+  return Math.max(0, 1 - candidate.metroAccess.distanceMeters / 1500);
+}
+export function scoreFinalistsAfterIntervention(candidates: PlaceCandidate[], preference: UserPreference): FinalistScore[] {
+  return candidates.map((candidate) => {
+    const profile = candidate.activityProfile ?? derivePlaceActivityProfile(candidate.destinationCategory);
+    const dimensions = {
+      preferenceFit: interestScore(candidate, preference),
+      travelFit: travelFit(candidate, preference),
+      activityFit: interventionActivityFit({ ...candidate, activityProfile: profile }, preference),
+      weatherFit: profile.weatherExposure === "low" ? 1 : weatherFit(candidate, preference),
+      placeQuality: candidate.placeQuality ?? 0,
+      transitFit: interventionTransitFit(candidate, preference),
+    };
+    const total = Object.entries(INTERVENTION_FINALIST_WEIGHTS).reduce((sum, [key, weight]) => sum + dimensions[key as keyof typeof dimensions] * weight, 0);
+    return { poiId: candidate.id, total: Number(total.toFixed(4)), dimensions };
+  }).sort((a, b) => b.total - a.total);
+}
+
 function areSameDestination(left: PlaceCandidate, right: PlaceCandidate) {
   if (left.parentId && left.parentId === right.parentId) return true;
   const normalizedLeft = left.name.replaceAll(" ", "").toLowerCase();
@@ -178,6 +207,8 @@ export function createFactPacks(candidates: PlaceCandidate[]): PlaceFactPack[] {
     ...(candidate.route ? { route: candidate.route, travelTimeMinutes: candidate.route.walking.durationMinutes ?? candidate.route.driving.durationMinutes } : {}),
     ...(candidate.weather ? { weather: candidate.weather } : {}),
     ...(candidate.locationLabel ? { locationLabel: candidate.locationLabel } : {}),
+    ...(candidate.activityProfile ? { activityProfile: candidate.activityProfile } : {}),
+    ...(candidate.metroAccess ? { metroAccess: candidate.metroAccess } : {}),
     evidence: [
       { id: `AMAP_${candidate.id}_CATEGORY`, type: "category" as const, value: candidate.category, source: "amap-nearby-poi" },
       { id: `AMAP_${candidate.id}_DISTANCE`, type: "distance" as const, value: candidate.distanceMeters, source: "amap-nearby-poi" },
@@ -186,6 +217,8 @@ export function createFactPacks(candidates: PlaceCandidate[]): PlaceFactPack[] {
       ...(candidate.route?.driving.available && candidate.route.driving.durationMinutes !== undefined ? [{ id: `AMAP_${candidate.id}_ROUTE_DRIVING`, type: "route_time" as const, value: candidate.route.driving.durationMinutes, source: "amap", fetchedAt: new Date().toISOString() }] : []),
       ...(candidate.weather?.available && candidate.weather.weather ? [{ id: `AMAP_${candidate.id}_WEATHER`, type: "weather" as const, value: `${candidate.weather.temperatureC ?? ""}°C ${candidate.weather.weather}`, source: "amap", fetchedAt: candidate.weather.reportTime }] : []),
       ...(candidate.weather?.assessment ? [{ id: `AMAP_${candidate.id}_WEATHER_ASSESSMENT`, type: "weather_assessment" as const, value: candidate.weather.assessment.outdoorComfort, source: "deterministic-weather-assessment", fetchedAt: candidate.weather.reportTime }] : []),
+      ...(candidate.activityProfile ? [{ id: `DERIVED_${candidate.id}_ACTIVITY_PROFILE`, type: "activity_profile" as const, value: candidate.activityProfile.activityType, source: "derived_category_rule" }] : []),
+      ...(candidate.metroAccess?.available && candidate.metroAccess.stationName && candidate.metroAccess.distanceMeters !== undefined ? [{ id: `AMAP_${candidate.id}_METRO_ACCESS`, type: "metro_access" as const, value: `${candidate.metroAccess.stationName} ${candidate.metroAccess.distanceMeters}m`, source: "amap" }] : []),
       ...(candidate.locationLabel ? [{ id: `AMAP_${candidate.id}_CURRENT_LOCATION`, type: "location" as const, value: candidate.locationLabel, source: "amap" }] : []),
     ],
   }));

@@ -42,12 +42,14 @@ export const deterministicModel: StructuredModel = {
       preference_update: {
         updatedPreference: {
           activityLevel: "low",
-          indoorPreference: 0.7,
           naturePreference: 0.6,
           culturePreference: prompt.includes("历史建筑") ? 0.95 : 0.8,
           budgetLevel: "medium",
           companions: "solo",
-          transportPreference: "flexible",
+          transportPreference: prompt.includes("地铁附近") ? "metro" : "flexible",
+          movementPreference: prompt.includes("不想去坐着不动") ? "walk_around" : "flexible",
+          distanceTolerance: prompt.includes("稍微远一点") ? "flexible_if_transit" : "near",
+          indoorPreference: prompt.includes("室内") ? 0.9 : 0.7,
           heatTolerance: prompt.includes("不怕热") ? 0.9 : 0.5,
           rainTolerance: 0.5,
           freeTextConstraints: ["不要太累", "有点意思"],

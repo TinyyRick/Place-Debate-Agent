@@ -6,7 +6,8 @@ import { retrieveNearbyPois } from "@/lib/amap/places";
 import { getRoutes } from "@/lib/amap/routes";
 import { resolveLocation } from "@/lib/amap/location";
 import { getCurrentWeather } from "@/lib/amap/weather";
-import { createFactPacks, finalRankCandidates, hardFilterPois, rankCandidates, selectDiverseCandidates } from "@/lib/ranking/ranker";
+import { getMetroAccess } from "@/lib/amap/metro";
+import { createFactPacks, finalRankCandidates, hardFilterPois, rankCandidates, scoreFinalistsAfterIntervention, selectDiverseCandidates } from "@/lib/ranking/ranker";
 import type { PlaceCandidate } from "@/lib/schemas/place";
 import type { Coordinates, LocationContext, RouteContext, WeatherContext } from "@/lib/schemas/location";
 import type { DebateMessage } from "@/lib/schemas/debate";
@@ -30,12 +31,13 @@ export interface ContextDataSource {
   resolveLocation: (gps?: Coordinates) => Promise<LocationContext>;
   getWeather: (adcode: string) => Promise<WeatherContext>;
   getRoutes: (origin: Coordinates, destination: PlaceCandidate) => Promise<RouteContext>;
+  getMetroAccess?: (candidate: PlaceCandidate) => Promise<import("@/lib/schemas/place").MetroAccessContext>;
 }
 
 export function createDebateNodes(
   model: StructuredModel,
   dataSource: PlaceDataSource = { retrievePlaces: retrieveNearbyPois },
-  contextDataSource: ContextDataSource = { resolveLocation, getWeather: getCurrentWeather, getRoutes },
+  contextDataSource: ContextDataSource = { resolveLocation, getWeather: getCurrentWeather, getRoutes, getMetroAccess },
 ) {
   return {
     parseIntent: async (state: typeof DebateStateSchema.State) => {
@@ -77,9 +79,10 @@ export function createDebateNodes(
 
     finalRank: (state: typeof DebateStateSchema.State) => ({ selectedCandidates: selectDiverseCandidates(finalRankCandidates(state.enrichedCandidates, requirePreference(state))) }),
 
-    buildFactPacks: (state: typeof DebateStateSchema.State) => ({
-      factPacks: createFactPacks(state.selectedCandidates),
-    }),
+    buildFactPacks: (state: typeof DebateStateSchema.State) => {
+      const factPacks = createFactPacks(state.selectedCandidates);
+      return { factPacks, beforeInterventionScores: scoreFinalistsAfterIntervention(state.selectedCandidates, requirePreference(state)) };
+    },
 
     openingRound: async (state: typeof DebateStateSchema.State) => {
       const preference = requirePreference(state);
@@ -128,10 +131,27 @@ export function createDebateNodes(
         attackSummaries: state.attackMessages.map((message) => ({ id: message.id, speakerPoiId: message.speakerPoiId, targetPoiId: message.targetPoiId, claim: message.claim })),
       }) as { intervention?: unknown } | string;
       const interventionText = typeof resumed === "string" ? resumed.trim() : typeof resumed?.intervention === "string" ? resumed.intervention.trim() : "";
-      const previousPreference = requirePreference(state);
-      const { updatedPreference, preferenceDelta } = await updatePreferenceFromIntervention(previousPreference, interventionText, model);
-      return { interventionText, userPreference: updatedPreference, currentPreference: updatedPreference, preferenceDelta };
+      return { interventionText };
     },
+
+    updatePreference: async (state: typeof DebateStateSchema.State) => {
+      const { updatedPreference, preferenceDelta } = await updatePreferenceFromIntervention(requirePreference(state), state.interventionText, model);
+      return { userPreference: updatedPreference, currentPreference: updatedPreference, preferenceDelta };
+    },
+
+    detectMissingEvidence: (state: typeof DebateStateSchema.State) => {
+      const requiredEvidenceTypes = requirePreference(state).transportPreference === "metro" ? ["METRO_ACCESS" as const] : [];
+      const missingEvidenceTypes = requiredEvidenceTypes.filter((type) => type === "METRO_ACCESS" && state.factPacks.some((pack) => !pack.metroAccess));
+      return { requiredEvidenceTypes, missingEvidenceTypes };
+    },
+
+    enrichInterventionEvidence: async (state: typeof DebateStateSchema.State) => {
+      if (!contextDataSource.getMetroAccess) throw new Error("Metro evidence source is not configured.");
+      const candidates = await Promise.all(state.selectedCandidates.map(async (candidate) => ({ ...candidate, metroAccess: await contextDataSource.getMetroAccess!(candidate) })));
+      return { selectedCandidates: candidates, factPacks: createFactPacks(candidates) };
+    },
+
+    rerankFinalists: (state: typeof DebateStateSchema.State) => ({ afterInterventionScores: scoreFinalistsAfterIntervention(state.selectedCandidates, requirePreference(state)) }),
 
     rebuttalRound: async (state: typeof DebateStateSchema.State) => {
       const currentPreference = requirePreference(state);
@@ -166,6 +186,8 @@ export function createDebateNodes(
         requireOriginalPreference(state),
         requirePreference(state),
         state.preferenceDelta ?? { interventionText: "", changedFields: [] },
+        state.beforeInterventionScores,
+        state.afterInterventionScores,
         state.factPacks,
         [...state.openingMessages, ...state.attackMessages, ...state.rebuttalMessages],
         model,

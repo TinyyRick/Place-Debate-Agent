@@ -40,13 +40,20 @@ export async function updatePreferenceFromIntervention(
     ],
     "preference_update",
   );
+  // Explicit user phrases are deterministic guardrails over the structured model output.
+  const explicit = { ...updatedPreference };
+  if (interventionText.includes("室内")) explicit.indoorPreference = Math.max(explicit.indoorPreference, 0.9);
+  if (interventionText.includes("不想去坐着不动")) explicit.movementPreference = "walk_around";
+  if (interventionText.includes("地铁附近")) explicit.transportPreference = "metro";
+  if (interventionText.includes("稍微远一点")) explicit.distanceTolerance = "flexible_if_transit";
+  const normalizedPreference = UserPreferenceSchema.parse(explicit);
   const changedFields = (Object.keys(previousPreference) as Array<keyof UserPreference>).flatMap((field) => {
     const before = previousPreference[field];
-    const after = updatedPreference[field];
+    const after = normalizedPreference[field];
     return sameValue(before, after) ? [] : [{ field, before, after }];
   });
   return {
-    updatedPreference,
+    updatedPreference: normalizedPreference,
     preferenceDelta: PreferenceDeltaSchema.parse({ interventionText, changedFields }),
   };
 }

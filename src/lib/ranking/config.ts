@@ -30,3 +30,5 @@ export const FINAL_RANKING_WEIGHTS = {
   placeQuality: 0.10,
   novelty: 0.05,
 } as const;
+
+export const INTERVENTION_FINALIST_WEIGHTS = { preferenceFit: 0.26, travelFit: 0.18, activityFit: 0.22, weatherFit: 0.12, placeQuality: 0.10, transitFit: 0.12 } as const;
