@@ -35,6 +35,11 @@ function hasAvoidedCategory(profile: IntentProfile, category: SearchableCategory
 
 function resolveCategories(profile: IntentProfile): SearchableCategory[] {
   const text = profileText(profile);
+  // These are stable experience directions written by the clarification node.
+  // They take precedence over the original broad free-text interpretation.
+  if (text.includes("reading_cultural_exploration")) return ["bookstore", "cultural"];
+  if (text.includes("exhibition_exploration")) return ["museum", "gallery"];
+  if (text.includes("commercial_browsing")) return ["shopping"];
   if (/健身|锻炼|瑜伽|游泳/.test(text)) return ["fitness"];
   if (/学习|看书|自习|阅读/.test(text)) return ["bookstore", "cultural"];
   if (/购物|商场|逛街/.test(text)) return ["shopping"];

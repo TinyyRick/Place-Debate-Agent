@@ -21,6 +21,20 @@ describe("intent clarification and retrieval graph", () => {
     expect(done.intentProfile.missingSlots).toEqual([]); expect(done.factPacks).toHaveLength(3); expect(done.openingMessages).toEqual([]); expect(done.attackMessages).toEqual([]); expect(counts).toEqual({ places: 1, routes: 3 });
   });
 
+  it("writes a bookstore/cultural clarification into the resumed intent and search plan", async () => {
+    const [source, context] = dependencies(); const graph = createDebateGraph(deterministicModel, source, context, new MemorySaver()); const config = { configurable: { thread_id: "bookstore-clarification" } };
+    const paused = await graph.invoke({ originalQuery: "想室内逛逛" }, config);
+    expect(isInterrupted(paused)).toBe(true);
+
+    const done = DebateResultSchema.parse(await graph.invoke(new Command({ resume: { answer: "书店/文化空间" } }), config));
+
+    expect(done.intentProfile.experienceGoal).toContain("reading_cultural_exploration");
+    expect(done.intentProfile.missingSlots).not.toContain("experience_type");
+    expect(done.experienceProfile).toMatchObject({ engagementType: "exploration", spatial: "indoor" });
+    expect(done.searchPlan.allowedCategories).toEqual(["bookstore", "cultural"]);
+    expect(done.searchPlan.queries.map((query) => query.label)).toEqual(["bookstore", "cultural"]);
+  });
+
   it("retrieves a clear fitness request directly without a clarification or debate round", async () => {
     const [source, context] = dependencies(); const graph = createDebateGraph(deterministicModel, source, context, new MemorySaver());
     const output = await graph.invoke({ originalQuery: "想找附近健身房" }, { configurable: { thread_id: "fitness" } });

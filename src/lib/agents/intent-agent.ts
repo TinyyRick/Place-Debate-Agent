@@ -1,10 +1,45 @@
-import { IntentProfileInterpretationSchema, type IntentProfile } from "@/lib/schemas/intent";
-import type { ExperienceProfile } from "@/lib/schemas/experience";
+import { IntentProfileInterpretationSchema, IntentProfileSchema, type IntentProfile } from "@/lib/schemas/intent";
+import { ExperienceProfileSchema, type ExperienceProfile } from "@/lib/schemas/experience";
 import { PreferenceDeltaSchema, UserPreferenceSchema, type PreferenceDelta, type UserPreference } from "@/lib/schemas/preference";
 import type { StructuredModel } from "./model-factory";
 import { z } from "zod";
 
 const PreferenceUpdateSchema = z.object({ updatedPreference: UserPreferenceSchema });
+
+const CLARIFICATION_EXPERIENCE_DIRECTIONS = {
+  "商场/商业空间": "commercial_browsing",
+  "展览馆/博物馆": "exhibition_exploration",
+  "书店/文化空间": "reading_cultural_exploration",
+} as const;
+
+function appendUnique(values: string[], value: string) {
+  return values.includes(value) ? values : [...values.slice(-5), value];
+}
+
+/**
+ * A clarification button is an explicit user choice, not a suggestion for the
+ * model to optionally infer. Preserve it in the intent before retrieval.
+ */
+function applyClarificationDirection(
+  interpretation: { intentProfile: IntentProfile; experienceProfile: ExperienceProfile },
+  answer: string,
+) {
+  const direction = CLARIFICATION_EXPERIENCE_DIRECTIONS[answer as keyof typeof CLARIFICATION_EXPERIENCE_DIRECTIONS];
+  if (!direction) return interpretation;
+  return {
+    intentProfile: IntentProfileSchema.parse({
+      ...interpretation.intentProfile,
+      experienceGoal: appendUnique(interpretation.intentProfile.experienceGoal, direction),
+      constraints: appendUnique(interpretation.intentProfile.constraints, "indoor"),
+      missingSlots: interpretation.intentProfile.missingSlots.filter((slot) => slot !== "experience_type"),
+    }),
+    experienceProfile: ExperienceProfileSchema.parse({
+      ...interpretation.experienceProfile,
+      engagementType: "exploration",
+      spatial: "indoor",
+    }),
+  };
+}
 
 export async function interpretIntent(
   originalQuery: string,
@@ -31,13 +66,14 @@ export async function interpretIntent(
 
 export async function updateIntentFromClarification(originalQuery: string, previousProfile: IntentProfile, answer: string, model: StructuredModel) {
   const interpretation = await model.invoke(IntentProfileInterpretationSchema, [
-    { role: "system", content: "你是地点决策助手的 Intent Extractor。根据原始需求与用户的澄清，更新 intentProfile；只保留用户说过的信息。已经获得的 missingSlots 必须移除；不要输出 POI 类型、搜索词或推荐。" },
+    { role: "system", content: "你是地点决策助手的 Intent Extractor。根据原始需求与用户的澄清，更新 intentProfile、preference 和 experienceProfile；只保留用户说过的信息。用户选择的澄清方向必须明确写入 intentProfile，已经获得的 missingSlots 必须移除；不要输出 POI 类型、搜索词或推荐。" },
     { role: "user", content: `原始需求：${originalQuery}\n当前 IntentProfile：${JSON.stringify(previousProfile)}\n用户澄清：${answer}` },
   ], "intent_profile_update");
+  const clarified = applyClarificationDirection(interpretation, answer);
   return {
-    intentProfile: interpretation.intentProfile,
+    intentProfile: clarified.intentProfile,
     preference: UserPreferenceSchema.parse(interpretation.preference),
-    experienceProfile: interpretation.experienceProfile,
+    experienceProfile: clarified.experienceProfile,
   };
 }
 
