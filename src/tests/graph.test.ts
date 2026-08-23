@@ -14,8 +14,9 @@ function dependencies(counts?: { places: number; routes: number }) {
 describe("intent clarification and retrieval graph", () => {
   it("interrupts for ambiguous indoor exploration, then retrieves after a clarification", async () => {
     const counts = { places: 0, routes: 0 }; const [source, context] = dependencies(counts); const graph = createDebateGraph(deterministicModel, source, context, new MemorySaver()); const config = { configurable: { thread_id: "clarify" } };
-    const paused = await graph.invoke({ originalQuery: "想去室内逛逛" }, config);
-    expect(isInterrupted(paused)).toBe(true); expect((paused as unknown as { __interrupt__: Array<{ value: { question: string } }> }).__interrupt__[0]?.value.question).toContain("商场/商业空间");
+    const paused = await graph.invoke({ originalQuery: "想室内逛逛" }, config);
+    const clarification = (paused as unknown as { __interrupt__: Array<{ value: { question: string; options: string[] } }> }).__interrupt__[0]?.value;
+    expect(isInterrupted(paused)).toBe(true); expect(clarification?.question).toBe("你更想哪种？"); expect(clarification?.options).toEqual(["商场/商业空间", "展览馆/博物馆", "书店/文化空间", "都可以，直接推荐"]);
     const done = DebateResultSchema.parse(await graph.invoke(new Command({ resume: { answer: "都可以，直接推荐" } }), config));
     expect(done.intentProfile.missingSlots).toEqual([]); expect(done.factPacks).toHaveLength(3); expect(done.openingMessages).toEqual([]); expect(done.attackMessages).toEqual([]); expect(counts).toEqual({ places: 1, routes: 3 });
   });

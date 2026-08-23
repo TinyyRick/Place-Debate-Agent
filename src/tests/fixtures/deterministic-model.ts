@@ -47,7 +47,7 @@ export const deterministicModel: StructuredModel = {
             ...(userText.includes("不花钱") ? ["no_cost"] : []),
           ],
           avoid: userText.includes("咖啡") ? ["cafe"] : [],
-          missingSlots: userText.includes("室内逛") && !userText.includes("不花钱") ? ["exploration_type"] : [],
+          missingSlots: userText.includes("室内逛") && !userText.includes("不花钱") ? ["experience_type"] : [],
         },
         preference: {
           activityLevel: "low",

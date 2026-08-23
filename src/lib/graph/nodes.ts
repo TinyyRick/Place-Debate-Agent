@@ -72,10 +72,10 @@ export function createDebateNodes(
     clarificationInterrupt: async (state: typeof DebateStateSchema.State) => {
       const profile = requireIntentProfile(state);
       const slots = profile.missingSlots;
-      const question = slots.includes("exploration_type")
-        ? "室内逛逛更偏向：A 商场/商业空间 B 展览馆/博物馆 C 都可以，直接推荐"
+      const question = slots.includes("experience_type")
+        ? "你更想哪种？"
         : `为了更贴近你的需求，请补充：${slots.join("、")}。也可以选择“直接推荐”。`;
-      const resumed = interrupt({ intentProfile: profile, missingSlots: slots, question, options: slots.includes("exploration_type") ? ["商场/商业空间", "展览馆/博物馆", "都可以，直接推荐"] : ["直接推荐"] }) as { answer?: unknown } | string;
+      const resumed = interrupt({ intentProfile: profile, missingSlots: slots, question, options: slots.includes("experience_type") ? ["商场/商业空间", "展览馆/博物馆", "书店/文化空间", "都可以，直接推荐"] : ["直接推荐"] }) as { answer?: unknown } | string;
       const answer = typeof resumed === "string" ? resumed : typeof resumed?.answer === "string" ? resumed.answer : "直接推荐";
       const { intentProfile, preference } = await updateIntentFromClarification(state.originalQuery, profile, answer, model);
       return { intentProfile, userPreference: preference, currentPreference: preference, needsClarification: false };

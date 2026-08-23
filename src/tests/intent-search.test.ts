@@ -20,7 +20,7 @@ describe("intent-driven AMap search plans", () => {
 
   it("keeps uncertain indoor exploration in missingSlots and records exclusions", async () => {
     const { intentProfile } = await interpretIntent("想去室内逛逛，不想去咖啡馆", deterministicModel);
-    expect(intentProfile).toEqual({ goal: "休闲", activityIntensity: "medium", activityMode: ["indoor_walk"], experienceGoal: [], constraints: ["indoor"], avoid: ["cafe"], missingSlots: ["exploration_type"] });
+    expect(intentProfile).toEqual({ goal: "休闲", activityIntensity: "medium", activityMode: ["indoor_walk"], experienceGoal: [], constraints: ["indoor"], avoid: ["cafe"], missingSlots: ["experience_type"] });
   });
 
   it("treats low-intensity exploration as walking around, not mostly seated", async () => {
