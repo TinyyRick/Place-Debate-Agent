@@ -40,7 +40,7 @@ export async function scorePlaceExperiences(candidates: PlaceCandidate[], model:
   const response = await model.invoke(BatchExperienceResponseSchema, [
     {
       role: "system",
-      content: "你是地点体验评分器。根据地点名称、AMap 类型码与类别，为每个地点输出固定七维 ExperienceProfile。不要推荐、不要解释、不要捏造具体设施或价格。自习室、办事点等以专注/办事为主的地点应为 functional；博物馆、展览馆、可游逛艺术空间应为 exploration。必须把所有结果放在 items 数组中，并为输入的每个 poiId 返回一项。",
+      content: "你是地点体验评分器。根据地点名称、AMap 类型码与类别，为每个地点输出固定七维 ExperienceProfile。不要推荐、不要解释、不要捏造具体设施或价格。自习室、办事点等以专注/办事为主的地点应为 functional；以完成单次购买、取货或服务为主的单一零售点（如水果店、便利店、专卖柜台）也必须判为 functional，不能因为室内就判为 exploration。商场或商业空间仅在名称或类别明确显示为可广泛游逛的综合空间时可判为 consumption。博物馆、展览馆、可游逛艺术空间应为 exploration。必须把所有结果放在 items 数组中，并为输入的每个 poiId 返回一项。",
     },
     {
       role: "user",

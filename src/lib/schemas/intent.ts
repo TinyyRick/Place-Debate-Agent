@@ -47,7 +47,7 @@ export const IntentProfileSchema = z.object({
 export const IntentProfileInterpretationSchema = z.object({
   intentProfile: IntentProfileSchema,
   preference: UserPreferenceSchema,
-  userExperienceProfile: ExperienceProfileSchema,
+  experienceProfile: ExperienceProfileSchema,
 });
 
 export type UserIntent = z.infer<typeof UserIntentSchema>;

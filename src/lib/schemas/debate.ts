@@ -62,7 +62,7 @@ export const DebateResultSchema = z.object({
   originalPreference: UserPreferenceSchema,
   currentPreference: UserPreferenceSchema,
   intentProfile: IntentProfileSchema,
-  userExperienceProfile: ExperienceProfileSchema,
+  experienceProfile: ExperienceProfileSchema,
   userIntent: UserIntentSchema,
   searchPlan: SearchPlanSchema,
   interventionText: z.string(),

@@ -35,9 +35,18 @@ describe("intent-driven AMap search plans", () => {
   });
 
   it("retrieves and ranks a mixed indoor exploration pool rather than only malls", async () => {
-    const { intentProfile, preference, userExperienceProfile } = await interpretIntent("室内，一个人，想逛逛", deterministicModel);
+    const { intentProfile, preference, experienceProfile } = await interpretIntent("室内，一个人，想逛逛", deterministicModel);
     const plan = createSearchPlan(intentProfile);
     expect(intentProfile.companion).toBe("solo");
+    expect(experienceProfile).toEqual({
+      activityLevel: 0.7,
+      engagementType: "exploration",
+      socialFit: "solo",
+      pace: 0.5,
+      spatial: "indoor",
+      stimulation: 0.5,
+      costTier: "low",
+    });
     expect(plan.queries.map((query) => query.label)).toEqual(["shopping", "museum", "gallery", "bookstore", "cultural"]);
 
     const candidates = [
@@ -51,7 +60,7 @@ describe("intent-driven AMap search plans", () => {
       ...candidate,
       experienceProfile: { activityLevel: 0.6, engagementType: "exploration" as const, socialFit: "either" as const, pace: 0.5, spatial: "indoor" as const, stimulation: 0.5, costTier: "low" as const },
     }));
-    const selected = selectDiverseCandidates(rankCandidates(filterIntentCompatiblePois(scoredCandidates, userExperienceProfile), planExperience(intentProfile, preference), userExperienceProfile));
+    const selected = selectDiverseCandidates(rankCandidates(filterIntentCompatiblePois(scoredCandidates, experienceProfile), planExperience(intentProfile, preference), experienceProfile));
     expect(selected).toHaveLength(3);
     expect(selected.every((candidate) => candidate.destinationCategory !== "shopping")).toBe(true);
   });

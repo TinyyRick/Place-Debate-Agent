@@ -75,7 +75,7 @@ export default function Home() {
     </section>
     {awaiting ? <section><h2>还差一点信息</h2><p>{clarification?.[0]?.value?.question ?? "请补充你的需求。"}</p>{clarification?.[0]?.value?.options?.map((option) => <button key={option} disabled={loading} onClick={() => void resumeDebate({ answer: option })} type="button">{option}</button>)}</section> : null}
     {activeDebate ? <div className="results">
-      <section><h2>Parsed Preference</h2><pre>{JSON.stringify(activeDebate.originalPreference, null, 2)}</pre></section>
+      <section><h2>Parsed Intent & Experience</h2><pre>{JSON.stringify({ preference: activeDebate.originalPreference, intentProfile: activeDebate.intentProfile, experienceProfile: activeDebate.experienceProfile }, null, 2)}</pre></section>
       <section><p>📍 {activeDebate.location.formattedAddress}</p><p>天气：{activeDebate.weather.available ? `${activeDebate.weather.temperatureC ?? ""}°C · ${activeDebate.weather.weather}` : "暂无天气数据"}</p></section>
       <section><h2>Candidates</h2><div className="candidate-grid">{activeDebate.factPacks.map((place) => <article className="candidate" key={place.id}><h3>{place.name}</h3><p>{place.category} · {place.distanceMeters} m</p><p>步行 {place.route?.walking.durationMinutes ?? "未知"} min · 驾车 {place.route?.driving.durationMinutes ?? "未知"} min · {place.rating === undefined ? "评分未知" : `⭐ ${place.rating}`}</p></article>)}</div></section>
       {activeDebate.openingMessages.length > 0 ? <section><h2>Round 1 · Opening</h2><MessageList messages={activeDebate.openingMessages} names={names} /></section> : null}

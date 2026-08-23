@@ -38,9 +38,9 @@ function requireIntentProfile(state: typeof DebateStateSchema.State): IntentProf
   if (!state.intentProfile) throw new Error("Intent profile has not been extracted.");
   return IntentProfileSchema.parse(state.intentProfile);
 }
-function requireUserExperienceProfile(state: typeof DebateStateSchema.State): ExperienceProfile {
-  if (!state.userExperienceProfile) throw new Error("User experience profile has not been extracted.");
-  return ExperienceProfileSchema.parse(state.userExperienceProfile);
+function requireExperienceProfile(state: typeof DebateStateSchema.State): ExperienceProfile {
+  if (!state.experienceProfile) throw new Error("Experience profile has not been extracted.");
+  return ExperienceProfileSchema.parse(state.experienceProfile);
 }
 function requireSearchPlan(state: typeof DebateStateSchema.State): SearchPlan {
   if (!state.searchPlan) throw new Error("AMap search plan has not been created.");
@@ -69,13 +69,13 @@ export function createDebateNodes(
 ) {
   return {
     parseIntent: async (state: typeof DebateStateSchema.State) => {
-      const { intentProfile, preference: userPreference, userExperienceProfile } = await interpretIntent(state.originalQuery, model);
-      return { intentProfile, userExperienceProfile, userPreference, originalPreference: userPreference, currentPreference: userPreference };
+      const { intentProfile, preference: userPreference, experienceProfile } = await interpretIntent(state.originalQuery, model);
+      return { intentProfile, experienceProfile, userPreference, originalPreference: userPreference, currentPreference: userPreference };
     },
 
     experiencePlanner: (state: typeof DebateStateSchema.State) => {
       const currentPreference = planExperience(requireIntentProfile(state), requirePreference(state));
-      return { userPreference: currentPreference, currentPreference, userExperienceProfile: requireUserExperienceProfile(state) };
+      return { userPreference: currentPreference, currentPreference, experienceProfile: requireExperienceProfile(state) };
     },
 
     completenessCheck: (state: typeof DebateStateSchema.State) => ({ needsClarification: coreClarificationSlots(requireIntentProfile(state).missingSlots).length > 0 }),
@@ -92,8 +92,8 @@ export function createDebateNodes(
         : ["轻松散步/公园", "逛展/文化空间", "商场/商业空间", "都可以，直接推荐"];
       const resumed = interrupt({ intentProfile: profile, missingSlots: slots, question, options }) as { answer?: unknown } | string;
       const answer = typeof resumed === "string" ? resumed : typeof resumed?.answer === "string" ? resumed.answer : "直接推荐";
-      const { intentProfile, preference, userExperienceProfile } = await updateIntentFromClarification(state.originalQuery, profile, answer, model);
-      return { intentProfile, userExperienceProfile, userPreference: preference, currentPreference: preference, needsClarification: false };
+      const { intentProfile, preference, experienceProfile } = await updateIntentFromClarification(state.originalQuery, profile, answer, model);
+      return { intentProfile, experienceProfile, userPreference: preference, currentPreference: preference, needsClarification: false };
     },
 
     createSearchPlan: (state: typeof DebateStateSchema.State) => {
@@ -113,12 +113,12 @@ export function createDebateNodes(
     }),
 
     filterPlaces: (state: typeof DebateStateSchema.State) => ({
-      filteredPois: filterIntentCompatiblePois(hardFilterPois(state.scoredPois), requireUserExperienceProfile(state))
+      filteredPois: filterIntentCompatiblePois(hardFilterPois(state.scoredPois), requireExperienceProfile(state))
         .filter((candidate) => !state.excludedPoiIds.includes(candidate.id)),
     }),
 
     preliminaryRank: (state: typeof DebateStateSchema.State) => {
-      const rankedCandidates = rankCandidates(state.filteredPois, requirePreference(state), requireUserExperienceProfile(state));
+      const rankedCandidates = rankCandidates(state.filteredPois, requirePreference(state), requireExperienceProfile(state));
       const selectedCandidates = selectDiverseCandidates(rankedCandidates);
       return { rankedCandidates: rankedCandidates.slice(0, 10), selectedCandidates };
     },
@@ -142,7 +142,7 @@ export function createDebateNodes(
       return { weather, enrichedCandidates };
     },
 
-    finalRank: (state: typeof DebateStateSchema.State) => ({ selectedCandidates: selectDiverseCandidates(finalRankCandidates(state.enrichedCandidates, requirePreference(state), requireUserExperienceProfile(state))) }),
+    finalRank: (state: typeof DebateStateSchema.State) => ({ selectedCandidates: selectDiverseCandidates(finalRankCandidates(state.enrichedCandidates, requirePreference(state), requireExperienceProfile(state))) }),
 
     buildFactPacks: (state: typeof DebateStateSchema.State) => {
       const factPacks = createFactPacks(state.selectedCandidates);

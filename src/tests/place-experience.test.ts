@@ -53,4 +53,25 @@ describe("place experience layer", () => {
     expect(ranked.map((candidate) => candidate.id)).toEqual(expect.arrayContaining(["nanjing-museum", "old-camera-museum"]));
     expect(experienceMatchScore(wanderIntent, scored[0].experienceProfile!)).toBeLessThan(experienceMatchScore(wanderIntent, scored[1].experienceProfile!));
   });
+
+  it("excludes a single-purpose fruit shop from indoor exploration", async () => {
+    const indoorExplorer = { ...wanderIntent, spatial: "indoor" as const };
+    const candidates = [
+      { id: "cut-fruit", name: "切果NOW", category: "购物服务;综合市场", typeCode: "060200" },
+      { id: "nanjing-museum", name: "南京博物馆", category: "科教文化服务;博物馆", typeCode: "140100" },
+      { id: "old-camera-museum", name: "老相机艺术馆", category: "科教文化服务;展览馆", typeCode: "140200" },
+    ].map((candidate, index) => PlaceCandidateSchema.parse({
+      ...candidate,
+      longitude: 118.8 + index / 100,
+      latitude: 32.06,
+      address: "南京",
+      distanceMeters: 800 + index * 100,
+    }));
+
+    const scored = await scorePlaceExperiences(candidates, deterministicModel);
+    const filtered = filterIntentCompatiblePois(hardFilterPois(scored), indoorExplorer);
+
+    expect(scored.find((candidate) => candidate.id === "cut-fruit")?.experienceProfile?.engagementType).toBe("functional");
+    expect(filtered.map((candidate) => candidate.id)).not.toContain("cut-fruit");
+  });
 });

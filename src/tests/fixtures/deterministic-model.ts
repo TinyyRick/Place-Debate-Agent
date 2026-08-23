@@ -67,7 +67,7 @@ export const deterministicModel: StructuredModel = {
           companions: "solo",
           freeTextConstraints: ["不要太累", "有点意思"],
         },
-        userExperienceProfile: {
+        experienceProfile: {
           activityLevel: userText.includes("健身") ? 0.8 : 0.7,
           engagementType: userText.includes("健身") ? "functional" : "exploration",
           socialFit: userText.includes("一个人") ? "solo" : "either",
@@ -83,16 +83,16 @@ export const deterministicModel: StructuredModel = {
           activityLevel: "low", indoorPreference: 0.8, naturePreference: 0.4, culturePreference: 0.7,
           budgetLevel: "flexible", companions: "solo", freeTextConstraints: [],
         },
-        userExperienceProfile: { activityLevel: 0.5, engagementType: "exploration", socialFit: "either", pace: 0.5, spatial: "indoor", stimulation: 0.5, costTier: "low" },
+        experienceProfile: { activityLevel: 0.5, engagementType: "exploration", socialFit: "either", pace: 0.5, spatial: "indoor", stimulation: 0.5, costTier: "low" },
       },
       place_experience_batch: { items: experiencePlaces.map((place) => ({
         poiId: place.poiId,
-        activityLevel: /自习|学习/.test(place.name) ? 0.1 : 0.6,
-        engagementType: /自习|学习/.test(place.name) ? "functional" : "exploration",
+        activityLevel: /自习|学习|切果|水果/.test(place.name) ? 0.1 : 0.6,
+        engagementType: /自习|学习|切果|水果/.test(place.name) ? "functional" : "exploration",
         socialFit: "either",
-        pace: /自习|学习/.test(place.name) ? 0.2 : 0.5,
+        pace: /自习|学习|切果|水果/.test(place.name) ? 0.2 : 0.5,
         spatial: "indoor",
-        stimulation: /自习|学习/.test(place.name) ? 0.2 : 0.5,
+        stimulation: /自习|学习|切果|水果/.test(place.name) ? 0.2 : 0.5,
         costTier: "low",
       })) },
       preference_update: {

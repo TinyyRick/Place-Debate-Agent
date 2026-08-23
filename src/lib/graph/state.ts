@@ -19,7 +19,7 @@ export const DebateStateSchema = new StateSchema({
   currentPreference: UserPreferenceSchema.optional(),
   userIntent: UserIntentSchema.optional(),
   intentProfile: IntentProfileSchema.optional(),
-  userExperienceProfile: ExperienceProfileSchema.optional(),
+  experienceProfile: ExperienceProfileSchema.optional(),
   needsClarification: z.boolean().default(false),
   searchPlan: SearchPlanSchema.optional(),
   interventionText: z.string().default(""),
