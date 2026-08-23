@@ -20,10 +20,12 @@ export const IntentInterpretationSchema = z.object({
 /** User language, deliberately separate from POI taxonomy and retrieval rules. */
 export const IntentProfileSchema = z.object({
   goal: z.string().min(1).max(80),
-  experience: z.string().min(1).max(120),
+  activityIntensity: z.enum(["low", "medium", "high"]),
+  activityMode: z.array(z.string().min(1).max(80)).max(6),
+  experienceGoal: z.array(z.string().min(1).max(80)).max(6),
   constraints: z.array(z.string().min(1).max(80)).max(8),
   avoid: z.array(z.string().min(1).max(80)).max(8),
-  missing_slots: z.array(z.string().min(1).max(80)).max(5),
+  missingSlots: z.array(z.string().min(1).max(80)).max(5),
 });
 
 export const IntentProfileInterpretationSchema = z.object({

@@ -17,7 +17,7 @@ describe("intent clarification and retrieval graph", () => {
     const paused = await graph.invoke({ originalQuery: "想去室内逛逛" }, config);
     expect(isInterrupted(paused)).toBe(true); expect((paused as unknown as { __interrupt__: Array<{ value: { question: string } }> }).__interrupt__[0]?.value.question).toContain("商场/商业空间");
     const done = DebateResultSchema.parse(await graph.invoke(new Command({ resume: { answer: "都可以，直接推荐" } }), config));
-    expect(done.intentProfile.missing_slots).toEqual([]); expect(done.factPacks).toHaveLength(3); expect(done.openingMessages).toEqual([]); expect(done.attackMessages).toEqual([]); expect(counts).toEqual({ places: 1, routes: 3 });
+    expect(done.intentProfile.missingSlots).toEqual([]); expect(done.factPacks).toHaveLength(3); expect(done.openingMessages).toEqual([]); expect(done.attackMessages).toEqual([]); expect(counts).toEqual({ places: 1, routes: 3 });
   });
 
   it("retrieves a clear fitness request directly without a clarification or debate round", async () => {

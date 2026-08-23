@@ -15,7 +15,7 @@ export async function interpretIntent(
       {
         role: "system",
         content:
-          "你是地点决策助手的 Intent Extractor。只提取用户已经表达的需求，输出 intentProfile 与 preference。intentProfile 的 goal/experience/constraints/avoid 都使用用户语言，不得填写任何 POI 类型、搜索关键词或推荐方案。missing_slots 只列当前确实会影响推荐方向、但用户尚未表达的少量不确定点；若目标已足够明确则为空数组。preference 描述节奏、室内外、预算等感受偏好。",
+          "你是地点决策助手的 Intent Extractor。只提取用户已经表达的需求，输出 intentProfile 与 preference。intentProfile 的 goal、activityIntensity、activityMode、experienceGoal、constraints、avoid 都描述用户想获得的体验；不得填写任何 POI 类型、搜索关键词或推荐方案。低强度不等于久坐：若用户说“不想太累”且同时表达“有点意思/探索/体验”，activityMode 应包含 light_exploration，experienceGoal 应包含 exploration，而不是 mostly_seated。missingSlots 只列当前确实会影响推荐方向、但用户尚未表达的少量不确定点；若目标已足够明确则为空数组。",
       },
       { role: "user", content: originalQuery },
     ],
@@ -26,7 +26,7 @@ export async function interpretIntent(
 
 export async function updateIntentFromClarification(originalQuery: string, previousProfile: IntentProfile, answer: string, model: StructuredModel) {
   const interpretation = await model.invoke(IntentProfileInterpretationSchema, [
-    { role: "system", content: "你是地点决策助手的 Intent Extractor。根据原始需求与用户的澄清，更新 intentProfile；只保留用户说过的信息。已经获得的 missing_slots 必须移除；不要输出 POI 类型、搜索词或推荐。" },
+    { role: "system", content: "你是地点决策助手的 Intent Extractor。根据原始需求与用户的澄清，更新 intentProfile；只保留用户说过的信息。已经获得的 missingSlots 必须移除；不要输出 POI 类型、搜索词或推荐。" },
     { role: "user", content: `原始需求：${originalQuery}\n当前 IntentProfile：${JSON.stringify(previousProfile)}\n用户澄清：${answer}` },
   ], "intent_profile_update");
   return { intentProfile: interpretation.intentProfile, preference: UserPreferenceSchema.parse(interpretation.preference) };

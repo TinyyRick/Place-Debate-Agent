@@ -34,13 +34,20 @@ export const deterministicModel: StructuredModel = {
       intent_profile: {
         intentProfile: {
           goal: userText.includes("健身") ? "健身" : "休闲",
-          experience: userText.includes("室内") ? "indoor_walk" : userText.includes("健身") ? "fitness" : "leisure",
+          activityIntensity: userText.includes("不想太累") ? "low" : userText.includes("健身") ? "high" : "medium",
+          activityMode: [
+            ...(userText.includes("不想太累") && (userText.includes("有点意思") || userText.includes("体验")) ? ["light_exploration"] : []),
+            ...(userText.includes("室内") ? ["indoor_walk"] : []),
+          ],
+          experienceGoal: [
+            ...(userText.includes("有点意思") || userText.includes("体验") ? ["exploration"] : []),
+          ],
           constraints: [
             ...(userText.includes("室内") ? ["indoor"] : []),
             ...(userText.includes("不花钱") ? ["no_cost"] : []),
           ],
           avoid: userText.includes("咖啡") ? ["cafe"] : [],
-          missing_slots: userText.includes("室内逛") && !userText.includes("不花钱") ? ["exploration_type"] : [],
+          missingSlots: userText.includes("室内逛") && !userText.includes("不花钱") ? ["exploration_type"] : [],
         },
         preference: {
           activityLevel: "low",
@@ -53,7 +60,7 @@ export const deterministicModel: StructuredModel = {
         },
       },
       intent_profile_update: {
-        intentProfile: { goal: "休闲", experience: "indoor_walk", constraints: ["indoor"], avoid: [], missing_slots: [] },
+        intentProfile: { goal: "休闲", activityIntensity: "low", activityMode: ["indoor_walk"], experienceGoal: ["exploration"], constraints: ["indoor"], avoid: [], missingSlots: [] },
         preference: {
           activityLevel: "low", indoorPreference: 0.8, naturePreference: 0.4, culturePreference: 0.7,
           budgetLevel: "flexible", companions: "solo", freeTextConstraints: [],

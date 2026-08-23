@@ -6,6 +6,7 @@ import { DebateStateSchema } from "./state";
 
 export const DEBATE_GRAPH_NODES = [
   "parseIntent",
+  "experiencePlanner",
   "completenessCheck",
   "clarificationInterrupt",
   "createSearchPlan",
@@ -43,6 +44,7 @@ export function createDebateGraph(
 
   return new StateGraph(DebateStateSchema)
     .addNode("parseIntent", nodes.parseIntent)
+    .addNode("experiencePlanner", nodes.experiencePlanner)
     .addNode("completenessCheck", nodes.completenessCheck)
     .addNode("clarificationInterrupt", nodes.clarificationInterrupt)
     .addNode("createSearchPlan", nodes.createSearchPlan)
@@ -69,9 +71,10 @@ export function createDebateGraph(
     .addNode("rebuttalRound", nodes.rebuttalRound)
     .addNode("moderatorSummary", nodes.moderatorSummary)
     .addEdge(START, "parseIntent")
-    .addEdge("parseIntent", "completenessCheck")
+    .addEdge("parseIntent", "experiencePlanner")
+    .addEdge("experiencePlanner", "completenessCheck")
     .addConditionalEdges("completenessCheck", (state) => state.needsClarification ? "clarificationInterrupt" : "createSearchPlan")
-    .addEdge("clarificationInterrupt", "createSearchPlan")
+    .addEdge("clarificationInterrupt", "experiencePlanner")
     .addEdge("createSearchPlan", "resolveLocation")
     .addEdge("resolveLocation", "retrievePlaces")
     .addEdge("retrievePlaces", "filterPlaces")

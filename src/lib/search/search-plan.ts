@@ -22,7 +22,7 @@ const PLAN_BY_GOAL = {
 } as const;
 
 function resolveSearchIntent(profile: IntentProfile): UserIntent {
-  const text = [profile.goal, profile.experience, ...profile.constraints, ...profile.avoid].join(" ").toLowerCase();
+  const text = [profile.goal, ...profile.activityMode, ...profile.experienceGoal, ...profile.constraints, ...profile.avoid].join(" ").toLowerCase();
   if (/健身|锻炼|瑜伽|游泳/.test(text)) return { primaryGoal: "fitness", requiredCategories: ["fitness"], excludedCategories: [], searchTerms: ["健身房", "健身", "运动馆"], strictCategoryMatch: true, summary: profile.goal };
   if (/学习|看书|自习|阅读/.test(text)) return { primaryGoal: "study", requiredCategories: ["bookstore", "cultural", "cafe"], excludedCategories: text.includes("咖啡") ? ["cafe"] : [], searchTerms: ["图书馆", "书店", "书局"], strictCategoryMatch: true, summary: profile.goal };
   const indoorWalk = /室内|逛|购物|商业|indoor|walk/.test(text);
@@ -39,7 +39,7 @@ export function createSearchPlan(intentProfile: IntentProfile): SearchPlan {
     queries: PLAN_BY_GOAL[intent.primaryGoal],
     allowedCategories: intent.requiredCategories,
     prohibitedCategories: intent.excludedCategories,
-    rankingPriorities: [intentProfile.experience, ...intentProfile.constraints, intentProfile.avoid.length ? "avoid_exclusions" : "destination_quality"],
+    rankingPriorities: [...intentProfile.experienceGoal, ...intentProfile.activityMode, ...intentProfile.constraints, intentProfile.avoid.length ? "avoid_exclusions" : "destination_quality"],
     speculativeQueries: [],
   });
 }

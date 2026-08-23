@@ -4,6 +4,7 @@ import { createPlaceAgent } from "@/lib/agents/place-agent-factory";
 import type { StructuredModel } from "@/lib/agents/model-factory";
 import { retrieveNearbyPois } from "@/lib/amap/places";
 import { createSearchPlan } from "@/lib/search/search-plan";
+import { planExperience } from "@/lib/intent/experience-planner";
 import { getRoutes } from "@/lib/amap/routes";
 import { resolveLocation } from "@/lib/amap/location";
 import { getCurrentWeather } from "@/lib/amap/weather";
@@ -61,11 +62,16 @@ export function createDebateNodes(
       return { intentProfile, userPreference, originalPreference: userPreference, currentPreference: userPreference };
     },
 
-    completenessCheck: (state: typeof DebateStateSchema.State) => ({ needsClarification: requireIntentProfile(state).missing_slots.length > 0 }),
+    experiencePlanner: (state: typeof DebateStateSchema.State) => {
+      const currentPreference = planExperience(requireIntentProfile(state), requirePreference(state));
+      return { userPreference: currentPreference, currentPreference };
+    },
+
+    completenessCheck: (state: typeof DebateStateSchema.State) => ({ needsClarification: requireIntentProfile(state).missingSlots.length > 0 }),
 
     clarificationInterrupt: async (state: typeof DebateStateSchema.State) => {
       const profile = requireIntentProfile(state);
-      const slots = profile.missing_slots;
+      const slots = profile.missingSlots;
       const question = slots.includes("exploration_type")
         ? "室内逛逛更偏向：A 商场/商业空间 B 展览馆/博物馆 C 都可以，直接推荐"
         : `为了更贴近你的需求，请补充：${slots.join("、")}。也可以选择“直接推荐”。`;
