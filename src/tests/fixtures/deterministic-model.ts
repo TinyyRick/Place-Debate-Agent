@@ -3,7 +3,7 @@ import type { BaseMessageLike } from "@langchain/core/messages";
 import type { ZodType } from "zod";
 
 export const deterministicModel: StructuredModel = {
-  async invoke<T>(
+  async invoke<T extends Record<string, unknown>>(
     schema: ZodType<T>,
     messages: BaseMessageLike[],
     name: string,
@@ -85,7 +85,7 @@ export const deterministicModel: StructuredModel = {
         },
         userExperienceProfile: { activityLevel: 0.5, engagementType: "exploration", socialFit: "either", pace: 0.5, spatial: "indoor", stimulation: 0.5, costTier: "low" },
       },
-      place_experience_batch: experiencePlaces.map((place) => ({
+      place_experience_batch: { items: experiencePlaces.map((place) => ({
         poiId: place.poiId,
         activityLevel: /自习|学习/.test(place.name) ? 0.1 : 0.6,
         engagementType: /自习|学习/.test(place.name) ? "functional" : "exploration",
@@ -94,7 +94,7 @@ export const deterministicModel: StructuredModel = {
         spatial: "indoor",
         stimulation: /自习|学习/.test(place.name) ? 0.2 : 0.5,
         costTier: "low",
-      })),
+      })) },
       preference_update: {
         updatedPreference: {
           activityLevel: "low",

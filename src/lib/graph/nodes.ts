@@ -47,6 +47,11 @@ function requireSearchPlan(state: typeof DebateStateSchema.State): SearchPlan {
   return state.searchPlan;
 }
 
+/** Only uncertainty that changes the recommendation direction may interrupt. */
+export function coreClarificationSlots(slots: IntentProfile["missingSlots"]) {
+  return slots.filter((slot): slot is "experience_type" | "activity_type" => slot === "experience_type" || slot === "activity_type");
+}
+
 export interface PlaceDataSource {
   retrievePlaces: (origin: { longitude: number; latitude: number }, plan: SearchPlan) => Promise<PlaceCandidate[]>;
 }
@@ -73,15 +78,19 @@ export function createDebateNodes(
       return { userPreference: currentPreference, currentPreference, userExperienceProfile: requireUserExperienceProfile(state) };
     },
 
-    completenessCheck: (state: typeof DebateStateSchema.State) => ({ needsClarification: requireIntentProfile(state).missingSlots.length > 0 }),
+    completenessCheck: (state: typeof DebateStateSchema.State) => ({ needsClarification: coreClarificationSlots(requireIntentProfile(state).missingSlots).length > 0 }),
 
     clarificationInterrupt: async (state: typeof DebateStateSchema.State) => {
       const profile = requireIntentProfile(state);
-      const slots = profile.missingSlots;
-      const question = slots.includes("experience_type")
+      const slots = coreClarificationSlots(profile.missingSlots);
+      const experienceDirection = slots.includes("experience_type");
+      const question = experienceDirection
         ? "你更想哪种？"
-        : `为了更贴近你的需求，请补充：${slots.join("、")}。也可以选择“直接推荐”。`;
-      const resumed = interrupt({ intentProfile: profile, missingSlots: slots, question, options: slots.includes("experience_type") ? ["商场/商业空间", "展览馆/博物馆", "书店/文化空间", "都可以，直接推荐"] : ["直接推荐"] }) as { answer?: unknown } | string;
+        : "你更想做哪类活动？";
+      const options = experienceDirection
+        ? ["商场/商业空间", "展览馆/博物馆", "书店/文化空间", "都可以，直接推荐"]
+        : ["轻松散步/公园", "逛展/文化空间", "商场/商业空间", "都可以，直接推荐"];
+      const resumed = interrupt({ intentProfile: profile, missingSlots: slots, question, options }) as { answer?: unknown } | string;
       const answer = typeof resumed === "string" ? resumed : typeof resumed?.answer === "string" ? resumed.answer : "直接推荐";
       const { intentProfile, preference, userExperienceProfile } = await updateIntentFromClarification(state.originalQuery, profile, answer, model);
       return { intentProfile, userExperienceProfile, userPreference: preference, currentPreference: preference, needsClarification: false };

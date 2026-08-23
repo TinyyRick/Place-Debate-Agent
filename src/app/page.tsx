@@ -53,7 +53,10 @@ export default function Home() {
       const response = await fetch("/api/debate/resume", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ threadId: awaiting.threadId, action }) });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error ?? "Debate failed to resume.");
-      if (body.status === "awaiting_clarification") setAwaiting({ ...(awaiting as AwaitingIntervention), debate: body.debate } as AwaitingIntervention);
+      if (body.status === "awaiting_clarification") {
+        const interrupted = body.debate as { __interrupt__?: unknown };
+        setAwaiting({ ...(awaiting as AwaitingIntervention), debate: body.debate, interrupt: interrupted.__interrupt__ ?? awaiting.interrupt } as AwaitingIntervention);
+      }
       else { setResult(body.debate as DebateResult); setAwaiting(null); }
     } catch (caught) { setError(caught instanceof Error ? caught.message : "Debate failed to resume."); }
     finally { setLoading(false); }
