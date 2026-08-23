@@ -5,6 +5,7 @@ import { FinalistScoreSchema, PlaceCandidateSchema, PlaceFactPackSchema } from "
 import { PreferenceDeltaSchema, UserPreferenceSchema } from "@/lib/schemas/preference";
 import { UserIntentSchema } from "@/lib/schemas/intent";
 import { IntentProfileSchema } from "@/lib/schemas/intent";
+import { ExperienceProfileSchema } from "@/lib/schemas/experience";
 import { SearchPlanSchema } from "@/lib/schemas/search-plan";
 import { CoordinatesSchema, LocationContextSchema, WeatherContextSchema } from "@/lib/schemas/location";
 
@@ -18,6 +19,7 @@ export const DebateStateSchema = new StateSchema({
   currentPreference: UserPreferenceSchema.optional(),
   userIntent: UserIntentSchema.optional(),
   intentProfile: IntentProfileSchema.optional(),
+  userExperienceProfile: ExperienceProfileSchema.optional(),
   needsClarification: z.boolean().default(false),
   searchPlan: SearchPlanSchema.optional(),
   interventionText: z.string().default(""),
@@ -37,6 +39,7 @@ export const DebateStateSchema = new StateSchema({
   selectedPoiId: z.string().optional(),
   finalDuelMessages: z.array(DebateMessageSchema).default([]),
   rawPois: z.array(PlaceCandidateSchema).default([]),
+  scoredPois: z.array(PlaceCandidateSchema).default([]),
   filteredPois: z.array(PlaceCandidateSchema).default([]),
   rankedCandidates: z.array(PlaceCandidateSchema).default([]),
   selectedCandidates: z.array(PlaceCandidateSchema).default([]),

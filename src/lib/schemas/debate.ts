@@ -3,6 +3,7 @@ import { FinalistScoreSchema, PlaceCandidateSchema, PlaceFactPackSchema } from "
 import { PreferenceDeltaSchema, UserPreferenceSchema } from "./preference";
 import { UserIntentSchema } from "./intent";
 import { IntentProfileSchema } from "./intent";
+import { ExperienceProfileSchema } from "./experience";
 import { SearchPlanSchema } from "./search-plan";
 import { LocationContextSchema, WeatherContextSchema } from "./location";
 
@@ -61,6 +62,7 @@ export const DebateResultSchema = z.object({
   originalPreference: UserPreferenceSchema,
   currentPreference: UserPreferenceSchema,
   intentProfile: IntentProfileSchema,
+  userExperienceProfile: ExperienceProfileSchema,
   userIntent: UserIntentSchema,
   searchPlan: SearchPlanSchema,
   interventionText: z.string(),
@@ -78,6 +80,7 @@ export const DebateResultSchema = z.object({
   location: LocationContextSchema,
   weather: WeatherContextSchema,
   rawPois: z.array(PlaceCandidateSchema),
+  scoredPois: z.array(PlaceCandidateSchema),
   filteredPois: z.array(PlaceCandidateSchema),
   rankedCandidates: z.array(PlaceCandidateSchema),
   selectedCandidates: z.array(PlaceCandidateSchema),

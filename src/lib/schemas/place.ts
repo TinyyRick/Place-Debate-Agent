@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { RouteContextSchema, WeatherContextSchema } from "./location";
+import { ExperienceProfileSchema } from "./experience";
 
 export const EvidenceSchema = z.object({
   id: z.string().min(1),
@@ -57,6 +58,7 @@ export const PlaceCandidateSchema = z.object({
   placeQuality: z.number().min(0).max(1).optional(),
   preliminaryScore: z.number().min(0).max(1).optional(),
   activityProfile: PlaceActivityProfileSchema.optional(),
+  experienceProfile: ExperienceProfileSchema.optional(),
   metroAccess: MetroAccessContextSchema.optional(),
 });
 

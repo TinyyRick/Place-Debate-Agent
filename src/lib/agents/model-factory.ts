@@ -11,7 +11,7 @@ export interface ChatModelConfig {
 }
 
 export interface StructuredModel {
-  invoke<T extends Record<string, unknown>>(
+  invoke<T>(
     schema: ZodType<T>,
     messages: BaseMessageLike[],
     name: string,
@@ -37,12 +37,14 @@ export function createChatModel({
   });
 
   return {
-    async invoke<T extends Record<string, unknown>>(
+    async invoke<T>(
       schema: ZodType<T>,
       messages: BaseMessageLike[],
       name: string,
     ) {
-      const runnable = chatModel.withStructuredOutput<T>(schema, { name });
+      // The integration's generic currently constrains T to object records,
+      // while JSON-schema structured output also supports a top-level array.
+      const runnable = chatModel.withStructuredOutput(schema as unknown as ZodType<Record<string, unknown>>, { name });
       return schema.parse(await runnable.invoke(messages));
     },
   };

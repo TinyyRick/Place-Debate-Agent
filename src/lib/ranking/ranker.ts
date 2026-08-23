@@ -1,6 +1,7 @@
 import type { FinalistScore, PlaceFactPack, PlaceCandidate } from "@/lib/schemas/place";
 import type { UserPreference } from "@/lib/schemas/preference";
-import type { UserIntent } from "@/lib/schemas/intent";
+import type { ExperienceProfile } from "@/lib/schemas/experience";
+import { experienceMatchScore, isExperienceCompatible, NEUTRAL_EXPERIENCE_PROFILE } from "@/lib/experience/place-experience-scorer";
 import { FINAL_RANKING_WEIGHTS, INTERVENTION_FINALIST_WEIGHTS, QUALITY_FILTER_CONFIG, RANKING_WEIGHTS } from "./config";
 import { calculatePlaceQuality, classifyDestinationCategory, isDestinationCategory } from "./taxonomy";
 import { derivePlaceActivityProfile } from "./activity-profile";
@@ -73,14 +74,14 @@ export function hardFilterPois(candidates: PlaceCandidate[]) {
  * This is intentionally a hard, deterministic gate.  It runs after destination
  * quality filtering so facilities cannot re-enter through an intent fallback.
  */
-export function filterIntentCompatiblePois(candidates: PlaceCandidate[], intent: UserIntent) {
+export function filterIntentCompatiblePois(candidates: PlaceCandidate[], intentExperience: ExperienceProfile) {
   return candidates.flatMap((candidate) => {
     // `destinationCategory` has a schema default of "other", so always derive
     // from AMap fields here instead of treating that default as classification.
     const category = classifyDestinationCategory(candidate);
-    if (intent.excludedCategories.includes(category)) return [];
-    if (intent.strictCategoryMatch && !intent.requiredCategories.includes(category)) return [];
-    return [{ ...candidate, destinationCategory: category }];
+    const experienceProfile = candidate.experienceProfile ?? NEUTRAL_EXPERIENCE_PROFILE;
+    if (!isExperienceCompatible(intentExperience, experienceProfile)) return [];
+    return [{ ...candidate, destinationCategory: category, experienceProfile }];
   });
 }
 
@@ -106,29 +107,20 @@ function activityScore(candidate: PlaceCandidate, activityLevel: UserPreference[
   return 0.8;
 }
 
-function noveltyScore(candidate: PlaceCandidate, preference: UserPreference) {
-  const asksForInterest = preference.freeTextConstraints.some((constraint) =>
-    ["有意思", "新奇", "特别", "逛"].some((term) => constraint.includes(term)),
-  );
+function noveltyScore(candidate: PlaceCandidate, intentExperience: ExperienceProfile) {
+  const asksForInterest = intentExperience.engagementType === "exploration";
   if (!asksForInterest) return 0.6;
   return ["museum", "gallery", "bookstore", "attraction", "cultural", "entertainment"].includes(candidate.destinationCategory) ? 1 : 0.55;
 }
 
-function intentFit(candidate: PlaceCandidate, intent: UserIntent) {
-  const category = candidate.destinationCategory;
-  if (intent.excludedCategories.includes(category)) return 0;
-  if (intent.requiredCategories.includes(category)) return 1;
-  return intent.strictCategoryMatch ? 0 : 0.55;
-}
-
-export function rankCandidates(candidates: PlaceCandidate[], preference: UserPreference, intent: UserIntent) {
+export function rankCandidates(candidates: PlaceCandidate[], preference: UserPreference, intentExperience: ExperienceProfile) {
   return candidates.map(enrichCandidate).map((candidate) => {
     const distance = Math.max(0, 1 - candidate.distanceMeters / QUALITY_FILTER_CONFIG.fallbackDistanceMeters);
-    const score = RANKING_WEIGHTS.interestFit * (intentFit(candidate, intent) * 0.7 + interestScore(candidate, preference) * 0.3)
+    const score = RANKING_WEIGHTS.interestFit * experienceMatchScore(intentExperience, candidate.experienceProfile ?? NEUTRAL_EXPERIENCE_PROFILE)
       + RANKING_WEIGHTS.distance * distance
       + RANKING_WEIGHTS.activityFit * activityScore(candidate, preference.activityLevel)
       + RANKING_WEIGHTS.placeQuality * (candidate.placeQuality ?? 0)
-      + RANKING_WEIGHTS.novelty * noveltyScore(candidate, preference);
+      + RANKING_WEIGHTS.novelty * noveltyScore(candidate, intentExperience);
     return { ...candidate, preliminaryScore: Number(score.toFixed(4)) };
   }).sort((left, right) => (right.preliminaryScore ?? 0) - (left.preliminaryScore ?? 0));
 }
@@ -151,15 +143,15 @@ function weatherFit(candidate: PlaceCandidate, preference: UserPreference) {
   if (hot) return 0.45 + preference.heatTolerance * 0.45;
   return 1;
 }
-export function finalRankCandidates(candidates: PlaceCandidate[], preference: UserPreference, intent: UserIntent) {
+export function finalRankCandidates(candidates: PlaceCandidate[], preference: UserPreference, intentExperience: ExperienceProfile) {
   return candidates.map((candidate) => {
     const base = candidate.preliminaryScore ?? 0;
-    const score = FINAL_RANKING_WEIGHTS.interestFit * (intentFit(candidate, intent) * 0.7 + interestScore(candidate, preference) * 0.3)
+    const score = FINAL_RANKING_WEIGHTS.interestFit * experienceMatchScore(intentExperience, candidate.experienceProfile ?? NEUTRAL_EXPERIENCE_PROFILE)
       + FINAL_RANKING_WEIGHTS.travelFit * travelFit(candidate, preference)
       + FINAL_RANKING_WEIGHTS.activityFit * activityScore(candidate, preference.activityLevel)
       + FINAL_RANKING_WEIGHTS.weatherFit * weatherFit(candidate, preference)
       + FINAL_RANKING_WEIGHTS.placeQuality * (candidate.placeQuality ?? 0)
-      + FINAL_RANKING_WEIGHTS.novelty * noveltyScore(candidate, preference);
+      + FINAL_RANKING_WEIGHTS.novelty * noveltyScore(candidate, intentExperience);
     return { ...candidate, preliminaryScore: Number((score || base).toFixed(4)) };
   }).sort((left, right) => (right.preliminaryScore ?? 0) - (left.preliminaryScore ?? 0));
 }

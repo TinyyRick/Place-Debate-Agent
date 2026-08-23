@@ -5,6 +5,7 @@ import type { StructuredModel } from "@/lib/agents/model-factory";
 import { retrieveNearbyPois } from "@/lib/amap/places";
 import { createSearchPlan } from "@/lib/search/search-plan";
 import { planExperience } from "@/lib/intent/experience-planner";
+import { scorePlaceExperiences } from "@/lib/experience/place-experience-scorer";
 import { getRoutes } from "@/lib/amap/routes";
 import { resolveLocation } from "@/lib/amap/location";
 import { getCurrentWeather } from "@/lib/amap/weather";
@@ -18,6 +19,7 @@ import { interrupt } from "@langchain/langgraph";
 import { UserPreferenceSchema, type UserPreference } from "@/lib/schemas/preference";
 import { UserIntentSchema, type UserIntent } from "@/lib/schemas/intent";
 import { IntentProfileSchema, type IntentProfile } from "@/lib/schemas/intent";
+import { ExperienceProfileSchema, type ExperienceProfile } from "@/lib/schemas/experience";
 import type { SearchPlan } from "@/lib/schemas/search-plan";
 
 function requirePreference(state: typeof DebateStateSchema.State): UserPreference {
@@ -35,6 +37,10 @@ function requireIntent(state: typeof DebateStateSchema.State): UserIntent {
 function requireIntentProfile(state: typeof DebateStateSchema.State): IntentProfile {
   if (!state.intentProfile) throw new Error("Intent profile has not been extracted.");
   return IntentProfileSchema.parse(state.intentProfile);
+}
+function requireUserExperienceProfile(state: typeof DebateStateSchema.State): ExperienceProfile {
+  if (!state.userExperienceProfile) throw new Error("User experience profile has not been extracted.");
+  return ExperienceProfileSchema.parse(state.userExperienceProfile);
 }
 function requireSearchPlan(state: typeof DebateStateSchema.State): SearchPlan {
   if (!state.searchPlan) throw new Error("AMap search plan has not been created.");
@@ -58,13 +64,13 @@ export function createDebateNodes(
 ) {
   return {
     parseIntent: async (state: typeof DebateStateSchema.State) => {
-      const { intentProfile, preference: userPreference } = await interpretIntent(state.originalQuery, model);
-      return { intentProfile, userPreference, originalPreference: userPreference, currentPreference: userPreference };
+      const { intentProfile, preference: userPreference, userExperienceProfile } = await interpretIntent(state.originalQuery, model);
+      return { intentProfile, userExperienceProfile, userPreference, originalPreference: userPreference, currentPreference: userPreference };
     },
 
     experiencePlanner: (state: typeof DebateStateSchema.State) => {
       const currentPreference = planExperience(requireIntentProfile(state), requirePreference(state));
-      return { userPreference: currentPreference, currentPreference };
+      return { userPreference: currentPreference, currentPreference, userExperienceProfile: requireUserExperienceProfile(state) };
     },
 
     completenessCheck: (state: typeof DebateStateSchema.State) => ({ needsClarification: requireIntentProfile(state).missingSlots.length > 0 }),
@@ -77,8 +83,8 @@ export function createDebateNodes(
         : `为了更贴近你的需求，请补充：${slots.join("、")}。也可以选择“直接推荐”。`;
       const resumed = interrupt({ intentProfile: profile, missingSlots: slots, question, options: slots.includes("experience_type") ? ["商场/商业空间", "展览馆/博物馆", "书店/文化空间", "都可以，直接推荐"] : ["直接推荐"] }) as { answer?: unknown } | string;
       const answer = typeof resumed === "string" ? resumed : typeof resumed?.answer === "string" ? resumed.answer : "直接推荐";
-      const { intentProfile, preference } = await updateIntentFromClarification(state.originalQuery, profile, answer, model);
-      return { intentProfile, userPreference: preference, currentPreference: preference, needsClarification: false };
+      const { intentProfile, preference, userExperienceProfile } = await updateIntentFromClarification(state.originalQuery, profile, answer, model);
+      return { intentProfile, userExperienceProfile, userPreference: preference, currentPreference: preference, needsClarification: false };
     },
 
     createSearchPlan: (state: typeof DebateStateSchema.State) => {
@@ -93,13 +99,17 @@ export function createDebateNodes(
       return { rawPois: await dataSource.retrievePlaces(state.location.amapCoordinates, requireSearchPlan(state)) };
     },
 
+    placeExperienceScorer: async (state: typeof DebateStateSchema.State) => ({
+      scoredPois: await scorePlaceExperiences(state.rawPois, model),
+    }),
+
     filterPlaces: (state: typeof DebateStateSchema.State) => ({
-      filteredPois: filterIntentCompatiblePois(hardFilterPois(state.rawPois), requireIntent(state))
+      filteredPois: filterIntentCompatiblePois(hardFilterPois(state.scoredPois), requireUserExperienceProfile(state))
         .filter((candidate) => !state.excludedPoiIds.includes(candidate.id)),
     }),
 
     preliminaryRank: (state: typeof DebateStateSchema.State) => {
-      const rankedCandidates = rankCandidates(state.filteredPois, requirePreference(state), requireIntent(state));
+      const rankedCandidates = rankCandidates(state.filteredPois, requirePreference(state), requireUserExperienceProfile(state));
       const selectedCandidates = selectDiverseCandidates(rankedCandidates);
       return { rankedCandidates: rankedCandidates.slice(0, 10), selectedCandidates };
     },
@@ -123,7 +133,7 @@ export function createDebateNodes(
       return { weather, enrichedCandidates };
     },
 
-    finalRank: (state: typeof DebateStateSchema.State) => ({ selectedCandidates: selectDiverseCandidates(finalRankCandidates(state.enrichedCandidates, requirePreference(state), requireIntent(state))) }),
+    finalRank: (state: typeof DebateStateSchema.State) => ({ selectedCandidates: selectDiverseCandidates(finalRankCandidates(state.enrichedCandidates, requirePreference(state), requireUserExperienceProfile(state))) }),
 
     buildFactPacks: (state: typeof DebateStateSchema.State) => {
       const factPacks = createFactPacks(state.selectedCandidates);

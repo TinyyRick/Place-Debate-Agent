@@ -3,13 +3,20 @@ import type { BaseMessageLike } from "@langchain/core/messages";
 import type { ZodType } from "zod";
 
 export const deterministicModel: StructuredModel = {
-  async invoke<T extends Record<string, unknown>>(
+  async invoke<T>(
     schema: ZodType<T>,
     messages: BaseMessageLike[],
     name: string,
   ): Promise<T> {
     const prompt = JSON.stringify(messages);
     const userText = JSON.stringify(messages.at(-1));
+    const lastMessage = messages.at(-1);
+    const lastContent = typeof lastMessage === "object" && lastMessage !== null && "content" in lastMessage && typeof lastMessage.content === "string"
+      ? lastMessage.content
+      : undefined;
+    const experiencePlaces = name === "place_experience_batch" && lastContent
+      ? JSON.parse(lastContent) as Array<{ poiId: string; name: string }>
+      : [];
     const placeId = prompt.includes("代表地点“南京博物院”")
       ? "nanjing-museum"
       : prompt.includes("代表地点“先锋书店”")
@@ -47,6 +54,8 @@ export const deterministicModel: StructuredModel = {
             ...(userText.includes("不花钱") ? ["no_cost"] : []),
           ],
           avoid: userText.includes("咖啡") ? ["cafe"] : [],
+          ...(userText.includes("一个人") ? { companion: "solo" } : {}),
+          ...(userText.includes("不花钱") ? { budget: "free" } : {}),
           missingSlots: userText.includes("室内逛") && !userText.includes("不花钱") ? ["experience_type"] : [],
         },
         preference: {
@@ -58,6 +67,15 @@ export const deterministicModel: StructuredModel = {
           companions: "solo",
           freeTextConstraints: ["不要太累", "有点意思"],
         },
+        userExperienceProfile: {
+          activityLevel: userText.includes("健身") ? 0.8 : 0.7,
+          engagementType: userText.includes("健身") ? "functional" : "exploration",
+          socialFit: userText.includes("一个人") ? "solo" : "either",
+          pace: 0.5,
+          spatial: userText.includes("室内") ? "indoor" : "mixed",
+          stimulation: 0.5,
+          costTier: userText.includes("不花钱") ? "free" : "low",
+        },
       },
       intent_profile_update: {
         intentProfile: { goal: "休闲", activityIntensity: "low", activityMode: ["indoor_walk"], experienceGoal: ["exploration"], constraints: ["indoor"], avoid: [], missingSlots: [] },
@@ -65,7 +83,18 @@ export const deterministicModel: StructuredModel = {
           activityLevel: "low", indoorPreference: 0.8, naturePreference: 0.4, culturePreference: 0.7,
           budgetLevel: "flexible", companions: "solo", freeTextConstraints: [],
         },
+        userExperienceProfile: { activityLevel: 0.5, engagementType: "exploration", socialFit: "either", pace: 0.5, spatial: "indoor", stimulation: 0.5, costTier: "low" },
       },
+      place_experience_batch: experiencePlaces.map((place) => ({
+        poiId: place.poiId,
+        activityLevel: /自习|学习/.test(place.name) ? 0.1 : 0.6,
+        engagementType: /自习|学习/.test(place.name) ? "functional" : "exploration",
+        socialFit: "either",
+        pace: /自习|学习/.test(place.name) ? 0.2 : 0.5,
+        spatial: "indoor",
+        stimulation: /自习|学习/.test(place.name) ? 0.2 : 0.5,
+        costTier: "low",
+      })),
       preference_update: {
         updatedPreference: {
           activityLevel: "low",
