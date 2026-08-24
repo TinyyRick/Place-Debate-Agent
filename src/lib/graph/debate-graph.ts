@@ -111,7 +111,7 @@ export function createDebateGraph(
 
 export type DebateRuntime = { graph: ReturnType<typeof createDebateGraph> };
 export type AwaitingDebate = Pick<DebateResult,
-  "originalQuery" | "userPreference" | "originalPreference" | "currentPreference" | "intentProfile" | "experienceProfile" | "userIntent" | "searchPlan" | "location" | "weather" | "rawPois" | "preScoringPois" | "scoredPois" | "filteredPois" | "rankedCandidates" | "selectedCandidates" | "enrichedCandidates" | "factPacks" | "openingMessages" | "attackMessages" | "requiredEvidenceTypes" | "missingEvidenceTypes" | "beforeInterventionScores"
+  "originalQuery" | "userPreference" | "originalPreference" | "currentPreference" | "intentProfile" | "experienceProfile" | "userIntent" | "searchPlan" | "location" | "weather" | "rawPois" | "amapQueryMetrics" | "preScoringPois" | "experienceScoringMetrics" | "scoredPois" | "filteredPois" | "rankedCandidates" | "selectedCandidates" | "enrichedCandidates" | "factPacks" | "openingMessages" | "attackMessages" | "requiredEvidenceTypes" | "missingEvidenceTypes" | "beforeInterventionScores"
 > & { rebuttalMessages: []; interventionText: ""; preferenceDelta?: undefined; moderatorResult?: undefined };
 export type AwaitingIntervention = {
   status: "awaiting_clarification";

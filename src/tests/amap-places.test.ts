@@ -29,7 +29,8 @@ describe("AMap search-plan execution", () => {
 
     expect(fakeFetch).toHaveBeenCalledTimes(5);
     expect(fakeFetch.mock.calls.map(([url]) => new URL(String(url)).searchParams.get("types"))).toEqual([
-      "060100", "140100", "140200", "060000", "140000",
+      "060100", "140100", "140200", "061205|060800", "140000",
     ]);
+    expect(new URL(String(fakeFetch.mock.calls[3]?.[0])).searchParams.get("keywords")).toBe("书店");
   });
 });

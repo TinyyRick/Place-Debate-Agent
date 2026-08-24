@@ -7,6 +7,13 @@ export const AMapSearchQuerySchema = z.object({
   label: z.string().min(1),
   typeCodes: z.string().min(1),
   keywords: z.array(z.string()).min(1),
+  searchKeyword: z.string().min(1).optional(),
+});
+
+export const AMapQueryMetricSchema = z.object({
+  label: z.string().min(1),
+  typeCodes: z.string().min(1),
+  rawCount: z.number().int().nonnegative(),
 });
 
 export const SearchPlanSchema = z.object({
@@ -22,3 +29,4 @@ export const SearchPlanSchema = z.object({
 });
 
 export type SearchPlan = z.infer<typeof SearchPlanSchema>;
+export type AMapQueryMetric = z.infer<typeof AMapQueryMetricSchema>;

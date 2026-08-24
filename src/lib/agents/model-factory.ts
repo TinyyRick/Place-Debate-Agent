@@ -21,7 +21,7 @@ export interface StructuredModel {
 export function createChatModel({
   provider = "deepseek",
   model = (process.env.DEEPSEEK_MODEL ?? "deepseek-v4-flash") as ChatModelConfig["model"],
-  temperature = 0.2,
+  temperature = 0,
 }: ChatModelConfig = {}): StructuredModel {
   if (provider !== "deepseek") {
     throw new Error(`Unsupported model provider: ${provider}`);

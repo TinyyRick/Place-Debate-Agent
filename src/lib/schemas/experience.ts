@@ -9,6 +9,7 @@ export const ExperienceProfileSchema = z.object({
   spatial: z.enum(["indoor", "outdoor", "mixed"]),
   stimulation: z.number().min(0).max(1),
   costTier: z.enum(["free", "low", "medium", "high"]),
+  source: z.enum(["model", "fallback"]).optional(),
 });
 
 export type ExperienceProfile = z.infer<typeof ExperienceProfileSchema>;

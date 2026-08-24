@@ -52,10 +52,12 @@ describe("place experience layer", () => {
       longitude: 118.8 + index / 10_000, latitude: 32.06, address: "南京", distanceMeters: 500 + index,
     }));
 
-    const scored = await scorePlaceExperiences(candidates, chunkModel);
+    const result = await scorePlaceExperiences(candidates, chunkModel);
+    const scored = result.candidates;
 
     expect(calls).toBe(3);
     expect(scored).toHaveLength(31);
+    expect(result.metrics).toEqual({ totalCandidates: 31, totalChunks: 3, failedChunks: 1, fallbackCandidates: 15 });
     expect(scored[0]?.experienceProfile?.engagementType).toBe("exploration");
     expect(scored[15]?.experienceProfile).toEqual(NEUTRAL_EXPERIENCE_PROFILE);
     expect(warning).toHaveBeenCalledWith("Place experience scoring chunk failed; using neutral profiles.", expect.objectContaining({ poiIds: expect.arrayContaining(["candidate-15"]) }));
@@ -66,9 +68,11 @@ describe("place experience layer", () => {
     const outdoorIntent = { ...wanderIntent, spatial: "outdoor" as const };
     const indoorMuseum = { ...wanderIntent, spatial: "indoor" as const };
     const mixedPlace = { ...wanderIntent, spatial: "mixed" as const };
+    const fallbackFunctionalPlace = { ...wanderIntent, engagementType: "functional" as const, source: "fallback" as const };
 
     expect(isExperienceCompatible(outdoorIntent, indoorMuseum)).toBe(false);
     expect(isExperienceCompatible(outdoorIntent, mixedPlace)).toBe(true);
+    expect(isExperienceCompatible(wanderIntent, fallbackFunctionalPlace)).toBe(true);
   });
 
   it("filters 手语博物馆 when the request is for outdoor scenery", async () => {
@@ -83,7 +87,7 @@ describe("place experience layer", () => {
       address: "南京",
       distanceMeters: 800 + index * 100,
     }));
-    const scored = await scorePlaceExperiences(candidates, deterministicModel);
+    const { candidates: scored } = await scorePlaceExperiences(candidates, deterministicModel);
     const museum = scored.find((candidate) => candidate.id === "sign-language-museum");
 
     expect(museum?.experienceProfile?.spatial).toBe("indoor");
@@ -103,7 +107,7 @@ describe("place experience layer", () => {
       distanceMeters: 800 + index * 100,
     }));
 
-    const scored = await scorePlaceExperiences(candidates, deterministicModel);
+    const { candidates: scored } = await scorePlaceExperiences(candidates, deterministicModel);
     const filtered = filterIntentCompatiblePois(hardFilterPois(scored), wanderIntent);
     const ranked = rankCandidates(filtered, preference, wanderIntent);
 
@@ -128,7 +132,7 @@ describe("place experience layer", () => {
       distanceMeters: 800 + index * 100,
     }));
 
-    const scored = await scorePlaceExperiences(candidates, deterministicModel);
+    const { candidates: scored } = await scorePlaceExperiences(candidates, deterministicModel);
     const filtered = filterIntentCompatiblePois(hardFilterPois(scored), indoorExplorer);
 
     expect(scored.find((candidate) => candidate.id === "cut-fruit")?.experienceProfile?.engagementType).toBe("functional");

@@ -6,7 +6,7 @@ import { PreferenceDeltaSchema, UserPreferenceSchema } from "@/lib/schemas/prefe
 import { UserIntentSchema } from "@/lib/schemas/intent";
 import { IntentProfileSchema } from "@/lib/schemas/intent";
 import { ExperienceProfileSchema } from "@/lib/schemas/experience";
-import { SearchPlanSchema } from "@/lib/schemas/search-plan";
+import { AMapQueryMetricSchema, SearchPlanSchema } from "@/lib/schemas/search-plan";
 import { CoordinatesSchema, LocationContextSchema, WeatherContextSchema } from "@/lib/schemas/location";
 
 export const DebateStateSchema = new StateSchema({
@@ -39,7 +39,9 @@ export const DebateStateSchema = new StateSchema({
   selectedPoiId: z.string().optional(),
   finalDuelMessages: z.array(DebateMessageSchema).default([]),
   rawPois: z.array(PlaceCandidateSchema).default([]),
+  amapQueryMetrics: z.array(AMapQueryMetricSchema).default([]),
   preScoringPois: z.array(PlaceCandidateSchema).default([]),
+  experienceScoringMetrics: z.object({ totalCandidates: z.number().int().nonnegative(), totalChunks: z.number().int().nonnegative(), failedChunks: z.number().int().nonnegative(), fallbackCandidates: z.number().int().nonnegative() }).default({ totalCandidates: 0, totalChunks: 0, failedChunks: 0, fallbackCandidates: 0 }),
   scoredPois: z.array(PlaceCandidateSchema).default([]),
   filteredPois: z.array(PlaceCandidateSchema).default([]),
   rankedCandidates: z.array(PlaceCandidateSchema).default([]),

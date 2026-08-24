@@ -2,7 +2,7 @@ import { interpretIntent, updateIntentFromClarification, updatePreferenceFromInt
 import { moderateDebate } from "@/lib/agents/moderator-agent";
 import { createPlaceAgent } from "@/lib/agents/place-agent-factory";
 import type { StructuredModel } from "@/lib/agents/model-factory";
-import { retrieveNearbyPois } from "@/lib/amap/places";
+import { retrieveNearbyPoisWithMetrics } from "@/lib/amap/places";
 import { createSearchPlan } from "@/lib/search/search-plan";
 import { planExperience } from "@/lib/intent/experience-planner";
 import { scorePlaceExperiences } from "@/lib/experience/place-experience-scorer";
@@ -20,7 +20,7 @@ import { UserPreferenceSchema, type UserPreference } from "@/lib/schemas/prefere
 import { UserIntentSchema, type UserIntent } from "@/lib/schemas/intent";
 import { IntentProfileSchema, type IntentProfile } from "@/lib/schemas/intent";
 import { ExperienceProfileSchema, type ExperienceProfile } from "@/lib/schemas/experience";
-import type { SearchPlan } from "@/lib/schemas/search-plan";
+import type { AMapQueryMetric, SearchPlan } from "@/lib/schemas/search-plan";
 
 function requirePreference(state: typeof DebateStateSchema.State): UserPreference {
   if (!state.currentPreference && !state.userPreference) throw new Error("User preference has not been parsed.");
@@ -53,7 +53,7 @@ export function coreClarificationSlots(slots: IntentProfile["missingSlots"]) {
 }
 
 export interface PlaceDataSource {
-  retrievePlaces: (origin: { longitude: number; latitude: number }, plan: SearchPlan) => Promise<PlaceCandidate[]>;
+  retrievePlaces: (origin: { longitude: number; latitude: number }, plan: SearchPlan) => Promise<PlaceCandidate[] | { pois: PlaceCandidate[]; queryMetrics: AMapQueryMetric[] }>;
 }
 export interface ContextDataSource {
   resolveLocation: (gps?: Coordinates) => Promise<LocationContext>;
@@ -64,7 +64,7 @@ export interface ContextDataSource {
 
 export function createDebateNodes(
   model: StructuredModel,
-  dataSource: PlaceDataSource = { retrievePlaces: retrieveNearbyPois },
+  dataSource: PlaceDataSource = { retrievePlaces: retrieveNearbyPoisWithMetrics },
   contextDataSource: ContextDataSource = { resolveLocation, getWeather: getCurrentWeather, getRoutes, getMetroAccess },
 ) {
   return {
@@ -105,7 +105,8 @@ export function createDebateNodes(
 
     retrievePlaces: async (state: typeof DebateStateSchema.State) => {
       if (!state.location) throw new Error("Location has not been resolved.");
-      return { rawPois: await dataSource.retrievePlaces(state.location.amapCoordinates, requireSearchPlan(state)) };
+      const retrieved = await dataSource.retrievePlaces(state.location.amapCoordinates, requireSearchPlan(state));
+      return Array.isArray(retrieved) ? { rawPois: retrieved } : { rawPois: retrieved.pois, amapQueryMetrics: retrieved.queryMetrics };
     },
 
     preExperienceFilter: (state: typeof DebateStateSchema.State) => ({
@@ -115,9 +116,10 @@ export function createDebateNodes(
       preScoringPois: hardFilterPois(state.rawPois),
     }),
 
-    placeExperienceScorer: async (state: typeof DebateStateSchema.State) => ({
-      scoredPois: await scorePlaceExperiences(state.preScoringPois, model),
-    }),
+    placeExperienceScorer: async (state: typeof DebateStateSchema.State) => {
+      const scored = await scorePlaceExperiences(state.preScoringPois, model);
+      return { scoredPois: scored.candidates, experienceScoringMetrics: scored.metrics };
+    },
 
     filterPlaces: (state: typeof DebateStateSchema.State) => ({
       filteredPois: filterIntentCompatiblePois(state.scoredPois, requireExperienceProfile(state))
@@ -241,8 +243,9 @@ export function createDebateNodes(
       if (decision?.actionType !== "refresh_candidates") throw new Error("Refresh requires an explicit refresh action.");
       const { updatedPreference, preferenceDelta } = await updatePreferenceFromIntervention(requirePreference(state), decision.feedbackText, model);
       if (!state.location) throw new Error("Location has not been resolved.");
-      const rawPois = await dataSource.retrievePlaces(state.location.amapCoordinates, requireSearchPlan(state));
-      return { rawPois, currentPreference: updatedPreference, userPreference: updatedPreference, preferenceDelta, interventionText: decision.feedbackText, excludedPoiIds: [...state.excludedPoiIds, ...state.factPacks.map((place) => place.id)], previousCandidateRounds: [...state.previousCandidateRounds, state.selectedCandidates], candidateRound: 2, refreshReason: decision.feedbackText };
+      const retrieved = await dataSource.retrievePlaces(state.location.amapCoordinates, requireSearchPlan(state));
+      const retrievalState = Array.isArray(retrieved) ? { rawPois: retrieved } : { rawPois: retrieved.pois, amapQueryMetrics: retrieved.queryMetrics };
+      return { ...retrievalState, currentPreference: updatedPreference, userPreference: updatedPreference, preferenceDelta, interventionText: decision.feedbackText, excludedPoiIds: [...state.excludedPoiIds, ...state.factPacks.map((place) => place.id)], previousCandidateRounds: [...state.previousCandidateRounds, state.selectedCandidates], candidateRound: 2, refreshReason: decision.feedbackText };
     },
 
     updatePreference: async (state: typeof DebateStateSchema.State) => {

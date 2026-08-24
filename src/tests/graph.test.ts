@@ -33,6 +33,7 @@ describe("intent clarification and retrieval graph", () => {
     expect(done.experienceProfile).toMatchObject({ engagementType: "exploration", spatial: "indoor" });
     expect(done.searchPlan.allowedCategories).toEqual(["bookstore", "cultural"]);
     expect(done.searchPlan.queries.map((query) => query.label)).toEqual(["bookstore", "cultural"]);
+    expect(done.searchPlan.queries[0]).toMatchObject({ typeCodes: "061205|060800", searchKeyword: "书店" });
   });
 
   it("retrieves a clear fitness request directly without a clarification or debate round", async () => {

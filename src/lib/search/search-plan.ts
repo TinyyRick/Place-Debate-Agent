@@ -3,13 +3,14 @@ import type { IntentProfile, UserIntent } from "@/lib/schemas/intent";
 import { SearchPlanSchema, type SearchPlan } from "@/lib/schemas/search-plan";
 
 type SearchableCategory = Exclude<DestinationCategory, "other">;
+type SearchQuery = { label: string; typeCodes: string; keywords: string[]; searchKeyword?: string };
 
-const QUERY_BY_CATEGORY: Record<SearchableCategory, { label: string; typeCodes: string; keywords: string[] }> = {
+const QUERY_BY_CATEGORY: Record<SearchableCategory, SearchQuery> = {
   park: { label: "park", typeCodes: "110000", keywords: ["公园", "绿地"] },
   attraction: { label: "attraction", typeCodes: "110000", keywords: ["景区", "古迹"] },
   museum: { label: "museum", typeCodes: "140100", keywords: ["博物馆", "纪念馆"] },
   gallery: { label: "gallery", typeCodes: "140200", keywords: ["美术馆", "展览馆"] },
-  bookstore: { label: "bookstore", typeCodes: "060000", keywords: ["书店", "书局"] },
+  bookstore: { label: "bookstore", typeCodes: "061205|060800", keywords: ["书店", "书局", "文化书店", "独立书店"], searchKeyword: "书店" },
   cafe: { label: "cafe", typeCodes: "050000", keywords: ["咖啡馆"] },
   cinema: { label: "cinema", typeCodes: "080600", keywords: ["电影院", "影城"] },
   fitness: { label: "fitness", typeCodes: "080100", keywords: ["健身房", "健身", "运动馆"] },

@@ -19,10 +19,18 @@ export const NEUTRAL_EXPERIENCE_PROFILE: ExperienceProfile = {
   spatial: "mixed",
   stimulation: 0.5,
   costTier: "medium",
+  source: "fallback",
+};
+
+export type ExperienceScoringMetrics = {
+  totalCandidates: number;
+  totalChunks: number;
+  failedChunks: number;
+  fallbackCandidates: number;
 };
 
 export function isExperienceCompatible(intent: ExperienceProfile, poi: ExperienceProfile) {
-  if (intent.engagementType === "exploration" && poi.engagementType === "functional") return false;
+  if (poi.source !== "fallback" && intent.engagementType === "exploration" && poi.engagementType === "functional") return false;
   if (intent.spatial !== "mixed" && poi.spatial !== "mixed" && intent.spatial !== poi.spatial) return false;
   return Math.abs(intent.activityLevel - poi.activityLevel) <= 0.5;
 }
@@ -37,8 +45,8 @@ export function experienceMatchScore(intent: ExperienceProfile, poi: ExperienceP
   return Number(Math.max(0, Math.min(1, 1 - (numericDistance + categoricalPenalty) / 6)).toFixed(4));
 }
 
-export async function scorePlaceExperiences(candidates: PlaceCandidate[], model: StructuredModel) {
-  if (!candidates.length) return [];
+export async function scorePlaceExperiences(candidates: PlaceCandidate[], model: StructuredModel): Promise<{ candidates: PlaceCandidate[]; metrics: ExperienceScoringMetrics }> {
+  if (!candidates.length) return { candidates: [], metrics: { totalCandidates: 0, totalChunks: 0, failedChunks: 0, fallbackCandidates: 0 } };
   const chunks = Array.from({ length: Math.ceil(candidates.length / EXPERIENCE_BATCH_SIZE) }, (_, index) =>
     candidates.slice(index * EXPERIENCE_BATCH_SIZE, (index + 1) * EXPERIENCE_BATCH_SIZE),
   );
@@ -47,16 +55,31 @@ export async function scorePlaceExperiences(candidates: PlaceCandidate[], model:
       const response = await scoreExperienceChunk(chunk, model);
       const inputIds = new Set(chunk.map((candidate) => candidate.id));
       const byId = new Map(response.items.filter((item) => inputIds.has(item.poiId)).map((item) => [item.poiId, item]));
-      return chunk.map((candidate) => ({ ...candidate, experienceProfile: byId.get(candidate.id) ?? NEUTRAL_EXPERIENCE_PROFILE }));
+      const fallbackCandidates = chunk.filter((candidate) => !byId.has(candidate.id)).length;
+      return {
+        candidates: chunk.map((candidate) => ({
+          ...candidate,
+          experienceProfile: { ...(byId.get(candidate.id) ?? NEUTRAL_EXPERIENCE_PROFILE), source: byId.has(candidate.id) ? "model" as const : "fallback" as const },
+        })),
+        failed: false,
+        fallbackCandidates,
+      };
     } catch (error) {
       console.warn("Place experience scoring chunk failed; using neutral profiles.", {
         poiIds: chunk.map((candidate) => candidate.id),
         error: error instanceof Error ? error.name : "Unknown error",
       });
-      return chunk.map((candidate) => ({ ...candidate, experienceProfile: NEUTRAL_EXPERIENCE_PROFILE }));
+      return { candidates: chunk.map((candidate) => ({ ...candidate, experienceProfile: NEUTRAL_EXPERIENCE_PROFILE })), failed: true, fallbackCandidates: chunk.length };
     }
   }));
-  return scoredChunks.flat().map((candidate) => PlaceCandidateSchema.parse(candidate));
+  const metrics = {
+    totalCandidates: candidates.length,
+    totalChunks: chunks.length,
+    failedChunks: scoredChunks.filter((chunk) => chunk.failed).length,
+    fallbackCandidates: scoredChunks.reduce((sum, chunk) => sum + chunk.fallbackCandidates, 0),
+  };
+  console.info("Place experience scoring metrics", metrics);
+  return { candidates: scoredChunks.flatMap((chunk) => chunk.candidates).map((candidate) => PlaceCandidateSchema.parse(candidate)), metrics };
 }
 
 async function scoreExperienceChunk(candidates: PlaceCandidate[], model: StructuredModel) {
