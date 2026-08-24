@@ -1,8 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { filterIntentCompatiblePois, hardFilterPois, rankCandidates } from "@/lib/ranking/ranker";
-import { experienceMatchScore, isExperienceCompatible, scorePlaceExperiences } from "@/lib/experience/place-experience-scorer";
+import { experienceMatchScore, isExperienceCompatible, NEUTRAL_EXPERIENCE_PROFILE, scorePlaceExperiences } from "@/lib/experience/place-experience-scorer";
 import { PlaceCandidateSchema } from "@/lib/schemas/place";
 import { deterministicModel } from "./fixtures/deterministic-model";
+import type { StructuredModel } from "@/lib/agents/model-factory";
+import type { BaseMessageLike } from "@langchain/core/messages";
+import type { ZodType } from "zod";
 
 const wanderIntent = {
   activityLevel: 0.7,
@@ -30,6 +33,35 @@ const preference = {
 };
 
 describe("place experience layer", () => {
+  it("scores large candidate sets in chunks and degrades only a failed chunk", async () => {
+    let calls = 0;
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const chunkModel: StructuredModel = {
+      async invoke<T extends Record<string, unknown>>(schema: ZodType<T>, messages: BaseMessageLike[]): Promise<T> {
+        calls += 1;
+        const lastMessage = messages.at(-1) as { content: string };
+        const chunk = JSON.parse(lastMessage.content) as Array<{ poiId: string }>;
+        if (calls === 2) throw new Error("invalid structured output");
+        return schema.parse({ items: chunk.map(({ poiId }) => ({
+          poiId, activityLevel: 0.5, engagementType: "exploration", socialFit: "either", pace: 0.5, spatial: "mixed", stimulation: 0.5, costTier: "low",
+        })) });
+      },
+    };
+    const candidates = Array.from({ length: 31 }, (_, index) => PlaceCandidateSchema.parse({
+      id: `candidate-${index}`, name: `候选地点${index}`, category: "风景名胜;公园广场", typeCode: "110000",
+      longitude: 118.8 + index / 10_000, latitude: 32.06, address: "南京", distanceMeters: 500 + index,
+    }));
+
+    const scored = await scorePlaceExperiences(candidates, chunkModel);
+
+    expect(calls).toBe(3);
+    expect(scored).toHaveLength(31);
+    expect(scored[0]?.experienceProfile?.engagementType).toBe("exploration");
+    expect(scored[15]?.experienceProfile).toEqual(NEUTRAL_EXPERIENCE_PROFILE);
+    expect(warning).toHaveBeenCalledWith("Place experience scoring chunk failed; using neutral profiles.", expect.objectContaining({ poiIds: expect.arrayContaining(["candidate-15"]) }));
+    warning.mockRestore();
+  });
+
   it("rejects an indoor place for a specific outdoor experience while retaining mixed-space places", () => {
     const outdoorIntent = { ...wanderIntent, spatial: "outdoor" as const };
     const indoorMuseum = { ...wanderIntent, spatial: "indoor" as const };

@@ -39,6 +39,7 @@ export const DebateStateSchema = new StateSchema({
   selectedPoiId: z.string().optional(),
   finalDuelMessages: z.array(DebateMessageSchema).default([]),
   rawPois: z.array(PlaceCandidateSchema).default([]),
+  preScoringPois: z.array(PlaceCandidateSchema).default([]),
   scoredPois: z.array(PlaceCandidateSchema).default([]),
   filteredPois: z.array(PlaceCandidateSchema).default([]),
   rankedCandidates: z.array(PlaceCandidateSchema).default([]),

@@ -80,6 +80,7 @@ export const DebateResultSchema = z.object({
   location: LocationContextSchema,
   weather: WeatherContextSchema,
   rawPois: z.array(PlaceCandidateSchema),
+  preScoringPois: z.array(PlaceCandidateSchema),
   scoredPois: z.array(PlaceCandidateSchema),
   filteredPois: z.array(PlaceCandidateSchema),
   rankedCandidates: z.array(PlaceCandidateSchema),

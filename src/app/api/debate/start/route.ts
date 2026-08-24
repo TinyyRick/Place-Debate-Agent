@@ -14,7 +14,10 @@ export async function POST(request: Request) {
     const { query, gpsCoordinates } = RequestSchema.parse(await request.json());
     return NextResponse.json(await startDebate(query, gpsCoordinates));
   } catch (error) {
-    const message = error instanceof Error ? error.message : "The debate could not be started.";
+    console.error("Debate start failed.", error);
+    const message = error instanceof Error && error.message.startsWith("Only ")
+      ? "没有足够符合要求的地点，请调整条件后重试。"
+      : "地点推荐暂时无法完成，请稍后重试。";
     return NextResponse.json({ error: message }, { status: 400 });
   }
 }

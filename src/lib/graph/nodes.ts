@@ -108,12 +108,19 @@ export function createDebateNodes(
       return { rawPois: await dataSource.retrievePlaces(state.location.amapCoordinates, requireSearchPlan(state)) };
     },
 
+    preExperienceFilter: (state: typeof DebateStateSchema.State) => ({
+      // This first-layer filter is deterministic and deliberately runs before
+      // the LLM so POI infrastructure and duplicate sub-locations never spend
+      // a structured-output slot.
+      preScoringPois: hardFilterPois(state.rawPois),
+    }),
+
     placeExperienceScorer: async (state: typeof DebateStateSchema.State) => ({
-      scoredPois: await scorePlaceExperiences(state.rawPois, model),
+      scoredPois: await scorePlaceExperiences(state.preScoringPois, model),
     }),
 
     filterPlaces: (state: typeof DebateStateSchema.State) => ({
-      filteredPois: filterIntentCompatiblePois(hardFilterPois(state.scoredPois), requireExperienceProfile(state))
+      filteredPois: filterIntentCompatiblePois(state.scoredPois, requireExperienceProfile(state))
         .filter((candidate) => !state.excludedPoiIds.includes(candidate.id)),
     }),
 
