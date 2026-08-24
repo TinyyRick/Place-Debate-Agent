@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { filterIntentCompatiblePois, hardFilterPois, rankCandidates } from "@/lib/ranking/ranker";
-import { experienceMatchScore, scorePlaceExperiences } from "@/lib/experience/place-experience-scorer";
+import { experienceMatchScore, isExperienceCompatible, scorePlaceExperiences } from "@/lib/experience/place-experience-scorer";
 import { PlaceCandidateSchema } from "@/lib/schemas/place";
 import { deterministicModel } from "./fixtures/deterministic-model";
 
@@ -30,6 +30,34 @@ const preference = {
 };
 
 describe("place experience layer", () => {
+  it("rejects an indoor place for a specific outdoor experience while retaining mixed-space places", () => {
+    const outdoorIntent = { ...wanderIntent, spatial: "outdoor" as const };
+    const indoorMuseum = { ...wanderIntent, spatial: "indoor" as const };
+    const mixedPlace = { ...wanderIntent, spatial: "mixed" as const };
+
+    expect(isExperienceCompatible(outdoorIntent, indoorMuseum)).toBe(false);
+    expect(isExperienceCompatible(outdoorIntent, mixedPlace)).toBe(true);
+  });
+
+  it("filters 手语博物馆 when the request is for outdoor scenery", async () => {
+    const outdoorIntent = { ...wanderIntent, spatial: "outdoor" as const };
+    const candidates = [
+      { id: "sign-language-museum", name: "手语博物馆", category: "科教文化服务;博物馆", typeCode: "140100" },
+      { id: "outdoor-park", name: "玄武湖公园", category: "风景名胜;公园广场", typeCode: "110000" },
+    ].map((candidate, index) => PlaceCandidateSchema.parse({
+      ...candidate,
+      longitude: 118.8 + index / 100,
+      latitude: 32.06,
+      address: "南京",
+      distanceMeters: 800 + index * 100,
+    }));
+    const scored = await scorePlaceExperiences(candidates, deterministicModel);
+    const museum = scored.find((candidate) => candidate.id === "sign-language-museum");
+
+    expect(museum?.experienceProfile?.spatial).toBe("indoor");
+    expect(filterIntentCompatiblePois(hardFilterPois(scored), outdoorIntent).map((candidate) => candidate.id)).not.toContain("sign-language-museum");
+  });
+
   it("excludes a self-study room from a solo wandering request while retaining museums", async () => {
     const candidates = [
       { id: "study-room", name: "一心空间自习室", category: "科教文化服务;科教文化场所", typeCode: "140000" },
