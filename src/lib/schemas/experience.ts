@@ -3,7 +3,9 @@ import { z } from "zod";
 /** A fixed set of experiential dimensions shared by user intent and POIs. */
 export const ExperienceProfileSchema = z.object({
   activityLevel: z.number().min(0).max(1),
-  engagementType: z.enum(["exploration", "consumption", "functional", "social"]),
+  // `rest` means a low-stimulation, non-task-oriented stay. It is deliberately
+  // distinct from `functional` (for example, studying) and `consumption`.
+  engagementType: z.enum(["exploration", "consumption", "functional", "social", "rest"]),
   socialFit: z.enum(["solo", "group", "either"]),
   pace: z.number().min(0).max(1),
   spatial: z.enum(["indoor", "outdoor", "mixed"]),

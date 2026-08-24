@@ -138,4 +138,32 @@ describe("place experience layer", () => {
     expect(scored.find((candidate) => candidate.id === "cut-fruit")?.experienceProfile?.engagementType).toBe("functional");
     expect(filtered.map((candidate) => candidate.id)).not.toContain("cut-fruit");
   });
+
+  it("treats quiet rest as rest, excludes retail, and preserves a self-study room", async () => {
+    const quietRestIntent = {
+      activityLevel: 0.1,
+      engagementType: "rest" as const,
+      socialFit: "either" as const,
+      pace: 0.1,
+      spatial: "mixed" as const,
+      stimulation: 0.1,
+      costTier: "low" as const,
+    };
+    const candidates = [
+      { id: "vape-shop", name: "幸运星电子烟", category: "购物服务;专卖店", typeCode: "061000" },
+      { id: "study-room", name: "壹心空间自习室", category: "科教文化服务;科教文化场所", typeCode: "140000" },
+      { id: "museum-storage", name: "南京博物院文物库房", category: "科教文化服务;博物馆", typeCode: "140100" },
+    ].map((candidate, index) => PlaceCandidateSchema.parse({
+      ...candidate, longitude: 118.8 + index / 100, latitude: 32.06, address: "南京", distanceMeters: 800 + index * 100,
+    }));
+
+    const preScoring = hardFilterPois(candidates);
+    const { candidates: scored } = await scorePlaceExperiences(preScoring, deterministicModel);
+    const compatible = filterIntentCompatiblePois(scored, quietRestIntent);
+
+    expect(preScoring.map((candidate) => candidate.id)).not.toContain("museum-storage");
+    expect(scored.find((candidate) => candidate.id === "vape-shop")?.experienceProfile?.engagementType).toBe("consumption");
+    expect(compatible.map((candidate) => candidate.id)).not.toContain("vape-shop");
+    expect(compatible.map((candidate) => candidate.id)).toContain("study-room");
+  });
 });
