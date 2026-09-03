@@ -22,6 +22,7 @@ describe("AMap search-plan execution", () => {
       constraints: ["indoor"],
       avoid: [],
       companion: "solo",
+      mentionedCategories: [],
       missingSlots: [],
     });
 
@@ -32,5 +33,23 @@ describe("AMap search-plan execution", () => {
       "060100", "140100", "140200", "061205|060800", "140000",
     ]);
     expect(new URL(String(fakeFetch.mock.calls[3]?.[0])).searchParams.get("keywords")).toBe("书店");
+  });
+
+  it("preserves a positive AMap per-capita cost but treats missing cost as unknown", async () => {
+    const fakeFetch = vi.fn(async (input: RequestInfo | URL) => {
+      void input;
+      return new Response(JSON.stringify({
+        status: "1", info: "OK", infocode: "10000", pois: [
+          { id: "cafe", name: "测试咖啡馆", type: "餐饮服务;咖啡厅", typecode: "050500", location: "118.8,32.06", address: "南京", business: { rating: "4.6", cost: "42" } },
+          { id: "unknown", name: "未知消费咖啡馆", type: "餐饮服务;咖啡厅", typecode: "050500", location: "118.81,32.06", address: "南京", business: { rating: "4.5" } },
+        ],
+      }));
+    });
+    vi.stubGlobal("fetch", fakeFetch);
+    const plan = createSearchPlan({ goal: "咖啡", activityIntensity: "low", activityMode: ["seated"], experienceGoal: ["rest"], constraints: [], avoid: [], mentionedCategories: ["cafe"], missingSlots: [] });
+    const pois = await retrieveNearbyPois({ longitude: 118.796877, latitude: 32.060255 }, plan);
+    expect(pois.find((poi) => poi.id === "cafe")?.averageCostYuan).toBe(42);
+    expect(pois.find((poi) => poi.id === "unknown")?.averageCostYuan).toBeUndefined();
+    expect(new URL(String(fakeFetch.mock.calls[0]?.[0])).searchParams.get("show_fields")).toContain("business");
   });
 });

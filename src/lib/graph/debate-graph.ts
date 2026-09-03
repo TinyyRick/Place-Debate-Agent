@@ -89,38 +89,43 @@ export function createDebateGraph(
     .addEdge("candidateQualityCheck", "enrichRoutesAndWeather")
     .addEdge("enrichRoutesAndWeather", "finalRank")
     .addEdge("finalRank", "buildFactPacks")
-    // Debate nodes remain available, but are deliberately disconnected while
-    // candidate and intent quality are being validated without Debate LLM cost.
-    .addEdge("buildFactPacks", END)
+    .addConditionalEdges("buildFactPacks", (state) => state.factPacks.length === 3 ? "openingRound" : END)
     .addEdge("openingRound", "attackRound")
-    .addEdge("attackRound", "candidateDecisionGate")
+    .addEdge("attackRound", "rebuttalRound")
+    .addEdge("rebuttalRound", "candidateDecisionGate")
     .addConditionalEdges("candidateDecisionGate", (state) => state.candidateDecision?.actionType === "eliminate_candidate" ? "eliminateCandidate" : "refreshCandidates")
     .addEdge("eliminateCandidate", "finalDuel")
     .addEdge("finalDuel", "finalSelection")
-    .addEdge("finalSelection", END)
+    .addEdge("finalSelection", "rerankFinalists")
     .addEdge("refreshCandidates", "preExperienceFilter")
     .addEdge("userIntervention", "updatePreference")
     .addEdge("updatePreference", "detectMissingEvidence")
     .addConditionalEdges("detectMissingEvidence", (state) => state.missingEvidenceTypes.includes("METRO_ACCESS") ? "enrichInterventionEvidence" : "rerankFinalists")
     .addEdge("enrichInterventionEvidence", "rerankFinalists")
-    .addEdge("rerankFinalists", "rebuttalRound")
-    .addEdge("rebuttalRound", "moderatorSummary")
+    .addEdge("rerankFinalists", "moderatorSummary")
     .addEdge("moderatorSummary", END)
     .compile({ checkpointer });
 }
 
 export type DebateRuntime = { graph: ReturnType<typeof createDebateGraph> };
 export type AwaitingDebate = Pick<DebateResult,
-  "originalQuery" | "userPreference" | "originalPreference" | "currentPreference" | "intentProfile" | "experienceProfile" | "userIntent" | "searchPlan" | "location" | "weather" | "rawPois" | "amapQueryMetrics" | "preScoringPois" | "experienceScoringMetrics" | "scoredPois" | "filteredPois" | "rankedCandidates" | "selectedCandidates" | "enrichedCandidates" | "factPacks" | "openingMessages" | "attackMessages" | "requiredEvidenceTypes" | "missingEvidenceTypes" | "beforeInterventionScores"
-> & { rebuttalMessages: []; interventionText: ""; preferenceDelta?: undefined; moderatorResult?: undefined };
+  "originalQuery" | "userPreference" | "originalPreference" | "currentPreference" | "intentProfile" | "experienceProfile" | "userIntent" | "searchPlan" | "location" | "weather" | "rawPois" | "amapQueryMetrics" | "preScoringPois" | "experienceScoringMetrics" | "scoredPois" | "filteredPois" | "rankedCandidates" | "selectedCandidates" | "enrichedCandidates" | "factPacks" | "openingMessages" | "attackMessages" | "rebuttalMessages" | "requiredEvidenceTypes" | "missingEvidenceTypes" | "beforeInterventionScores" | "survivingCandidateIds" | "finalDuelMessages"
+> & { interventionText: string; preferenceDelta?: DebateResult["preferenceDelta"]; moderatorResult?: DebateResult["moderatorResult"] };
 export type AwaitingIntervention = {
-  status: "awaiting_clarification";
+  status: "awaiting_clarification" | "awaiting_candidate_decision" | "awaiting_final_selection";
   threadId: string;
   debate: AwaitingDebate;
   interrupt: unknown;
 };
 
 function newThreadId() { return crypto.randomUUID(); }
+
+function awaitingStatus(output: unknown): AwaitingIntervention["status"] {
+  const value = (output as { __interrupt__?: Array<{ value?: unknown }> }).__interrupt__?.[0]?.value as Record<string, unknown> | undefined;
+  if (Array.isArray(value?.finalDuelMessages)) return "awaiting_final_selection";
+  if (Array.isArray(value?.actions)) return "awaiting_candidate_decision";
+  return "awaiting_clarification";
+}
 
 export async function startDebate(
   originalQuery: string,
@@ -131,16 +136,16 @@ export async function startDebate(
   const output = await runtime.graph.invoke({ originalQuery, gpsCoordinates }, { configurable: { thread_id: threadId } });
   if (!isInterrupted(output)) return { status: "candidates_ready", threadId, debate: DebateResultSchema.parse(output) };
   const debate = output as unknown as AwaitingIntervention["debate"];
-  return { status: "awaiting_clarification", threadId, debate, interrupt: output.__interrupt__ };
+  return { status: awaitingStatus(output), threadId, debate, interrupt: output.__interrupt__ };
 }
 
 export async function resumeDebate(
   threadId: string,
   action: unknown,
   runtime: DebateRuntime = getServerDebateRuntime(),
-): Promise<{ status: "candidates_ready" | "awaiting_clarification"; debate: DebateResult | unknown }> {
+): Promise<{ status: "candidates_ready" | AwaitingIntervention["status"]; debate: DebateResult | unknown }> {
   const output = await runtime.graph.invoke(new Command({ resume: action }), { configurable: { thread_id: threadId } });
-  if (isInterrupted(output)) return { status: "awaiting_clarification", debate: output };
+  if (isInterrupted(output)) return { status: awaitingStatus(output), debate: output };
   return { status: "candidates_ready", debate: DebateResultSchema.parse(output) };
 }
 

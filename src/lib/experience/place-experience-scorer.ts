@@ -31,10 +31,10 @@ export type ExperienceScoringMetrics = {
 
 export function isExperienceCompatible(intent: ExperienceProfile, poi: ExperienceProfile) {
   if (poi.source !== "fallback" && intent.engagementType === "exploration" && poi.engagementType === "functional") return false;
-  // Rest is a non-commercial, low-stimulation recovery intent. A task-oriented
-  // place such as a self-study room can still be suitable; retail and social
-  // venues cannot satisfy it merely because they are indoors.
-  if (poi.source !== "fallback" && intent.engagementType === "rest" && (poi.engagementType === "consumption" || poi.engagementType === "social")) return false;
+  // Rest is a non-retail, low-stimulation recovery intent. A task-oriented
+  // study room or a café scored as social can still support a quiet solo stay;
+  // a transactional retail venue cannot satisfy it merely by being indoors.
+  if (poi.source !== "fallback" && intent.engagementType === "rest" && poi.engagementType === "consumption") return false;
   if (intent.spatial !== "mixed" && poi.spatial !== "mixed" && intent.spatial !== poi.spatial) return false;
   return Math.abs(intent.activityLevel - poi.activityLevel) <= 0.5;
 }

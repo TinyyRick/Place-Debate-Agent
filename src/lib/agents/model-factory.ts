@@ -43,7 +43,18 @@ export function createChatModel({
       name: string,
     ) {
       const runnable = chatModel.withStructuredOutput<T>(schema, { name });
-      return schema.parse(await runnable.invoke(messages));
+      try {
+        return schema.parse(await runnable.invoke(messages));
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "";
+        const isParseFailure = message.includes("Failed to parse") || message.includes("not valid JSON") || (error instanceof Error && (error.name === "ZodError" || error.name === "SyntaxError"));
+        if (!isParseFailure) throw error;
+        const repaired = await runnable.invoke([
+          ...messages,
+          { role: "user", content: `上一次输出未通过 JSON 校验：${message.slice(0, 800)}\n请修正上述问题后重新输出完整 JSON，不要输出任何其他内容。` },
+        ]);
+        return schema.parse(repaired);
+      }
     },
   };
 }

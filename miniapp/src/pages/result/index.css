@@ -1,0 +1,30 @@
+/* result 结果页 */
+
+/* 彩带纸屑：只在获胜时出现，飘过一次即消失 */
+.confetti-layer {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 0;
+  z-index: 30;
+  pointer-events: none;
+}
+.confetti-piece {
+  position: absolute;
+  top: -20px;
+  width: 9px;
+  height: 15px;
+  border-radius: 3px;
+  animation-name: confetti-fall;
+  animation-timing-function: linear;
+  animation-fill-mode: both;
+}
+@keyframes confetti-fall {
+  0% { transform: translateY(0) rotate(0deg); opacity: 1; }
+  100% { transform: translateY(104vh) rotate(540deg); opacity: 0.85; }
+}
+
+.winner-sub { display: block; margin-top: 6px; color: var(--muted); font-size: 13.5px; }
+
+.result-actions { margin-top: 20px; }

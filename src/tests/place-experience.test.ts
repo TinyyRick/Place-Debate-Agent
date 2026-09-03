@@ -166,4 +166,19 @@ describe("place experience layer", () => {
     expect(compatible.map((candidate) => candidate.id)).not.toContain("vape-shop");
     expect(compatible.map((candidate) => candidate.id)).toContain("study-room");
   });
+
+  it("retains a café scored as social for quiet rest while still rejecting retail consumption", () => {
+    const quietRestIntent = { activityLevel: 0.1, engagementType: "rest" as const, socialFit: "solo" as const, pace: 0.1, spatial: "indoor" as const, stimulation: 0.1, costTier: "low" as const };
+    const cafe = { ...quietRestIntent, engagementType: "social" as const };
+    const retail = { ...quietRestIntent, engagementType: "consumption" as const };
+    expect(isExperienceCompatible(quietRestIntent, cafe)).toBe(true);
+    expect(isExperienceCompatible(quietRestIntent, retail)).toBe(false);
+  });
+
+  it("retains a café destination for rest even when its POI profile is consumption", () => {
+    const quietRestIntent = { activityLevel: 0.1, engagementType: "rest" as const, socialFit: "solo" as const, pace: 0.1, spatial: "indoor" as const, stimulation: 0.1, costTier: "low" as const };
+    const cafe = PlaceCandidateSchema.parse({ id: "cafe", name: "科学咖啡厅", category: "餐饮服务;咖啡厅", typeCode: "050000", longitude: 118.8, latitude: 32.06, address: "南京", distanceMeters: 500, experienceProfile: { ...quietRestIntent, engagementType: "consumption" } });
+    expect(filterIntentCompatiblePois([cafe], quietRestIntent).map((candidate) => candidate.id)).toEqual(["cafe"]);
+    expect(filterIntentCompatiblePois([cafe], quietRestIntent, ["cafe"]).map((candidate) => candidate.id)).toEqual(["cafe"]);
+  });
 });

@@ -30,6 +30,15 @@ export const ClarificationSlotSchema = z.enum([
   "transport",
 ]);
 
+export const ExplicitTargetSchema = z.object({
+  // Preserve the user's concrete destination/activity wording. Search Planner,
+  // rather than the LLM, decides how AMap should query it.
+  // Models occasionally emit an empty text here; IntentProfileSchema drops the
+  // whole explicitTarget in that case instead of failing the parse.
+  text: z.string().max(40),
+  specificity: z.enum(["broad", "specific"]),
+}).optional();
+
 export const IntentProfileSchema = z.object({
   goal: z.string().min(1).max(80),
   activityIntensity: z.enum(["low", "medium", "high"]),
@@ -39,8 +48,16 @@ export const IntentProfileSchema = z.object({
   avoid: z.array(z.string().min(1).max(80)).max(8),
   // These belong to the intent contract rather than only to the presentation
   // preference. They remain optional when the user has not stated them.
-  companion: z.enum(["solo", "couple", "friends", "family"]).optional(),
-  budget: z.enum(["free", "low", "medium", "flexible"]).optional(),
+  companion: z.enum(["solo", "couple", "friends", "family"]).optional().catch(undefined),
+  budget: z.enum(["free", "low", "medium", "flexible"]).optional().catch(undefined),
+  // Explicitly named destination categories are preserved through retrieval so
+  // they cannot be diluted into a broad leisure interpretation.
+  mentionedCategories: z.array(z.enum([
+    "park", "museum", "gallery", "bookstore", "cafe", "cinema", "fitness", "shopping", "cultural",
+  ])).default([]),
+  // Models occasionally emit an empty explicitTarget object when the query
+  // names no concrete destination; drop it instead of failing the whole parse.
+  explicitTarget: ExplicitTargetSchema.transform((target) => (target && target.text.trim().length > 0 ? target : undefined)).optional(),
   missingSlots: z.array(ClarificationSlotSchema).max(5),
 });
 

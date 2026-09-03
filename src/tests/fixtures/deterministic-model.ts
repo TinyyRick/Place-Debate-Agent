@@ -14,34 +14,55 @@ export const deterministicModel: StructuredModel = {
     const lastContent = typeof lastMessage === "object" && lastMessage !== null && "content" in lastMessage && typeof lastMessage.content === "string"
       ? lastMessage.content
       : undefined;
+    const jsonAfter = <T>(label: string): T | undefined => {
+      if (!lastContent) return undefined;
+      const start = lastContent.indexOf(label);
+      if (start < 0) return undefined;
+      const value = lastContent.slice(start + label.length).split("\n", 1)[0];
+      try { return JSON.parse(value) as T; } catch { return undefined; }
+    };
+    const specificActivity = userText.includes("羽毛球")
+      ? "羽毛球"
+      : userText.includes("游泳")
+        ? "游泳"
+        : userText.includes("攀岩")
+          ? "攀岩"
+          : undefined;
+    const isExercise = /健身|运动|羽毛球|游泳|攀岩/.test(userText);
+    const isRest = /安静坐|安静休息|休息|放松|坐坐/.test(userText);
     const experiencePlaces = name === "place_experience_batch" && lastContent
       ? JSON.parse(lastContent) as Array<{ poiId: string; name: string }>
       : [];
-    const placeId = prompt.includes("代表地点“南京博物院”")
+    const ownPack = jsonAfter<{ id: string; evidence: Array<{ id: string; type: string }> }>("你的 FactPack：");
+    const assignedCompetitor = jsonAfter<{ id: string; evidence: Array<{ id: string; type: string }> }>("系统指定的对手 FactPack：");
+    const receivedAttack = jsonAfter<{ id: string; speakerPoiId: string }>("针对你的唯一实际攻击：");
+    const placeId = ownPack?.id ?? (prompt.includes("代表地点“南京博物院”")
       ? "nanjing-museum"
       : prompt.includes("代表地点“先锋书店”")
         ? "pioneer-bookstore"
-        : "xuanwu-lake";
-    const ownEvidence = {
+        : "xuanwu-lake");
+    const ownEvidence = ownPack?.evidence[0]?.id ?? ({
       "xuanwu-lake": "AMAP_xuanwu-lake_DISTANCE",
       "nanjing-museum": "AMAP_nanjing-museum_CATEGORY",
       "pioneer-bookstore": "AMAP_pioneer-bookstore_CATEGORY",
-    }[placeId];
-    const attackTarget = placeId === "nanjing-museum" ? "xuanwu-lake" : "nanjing-museum";
-    const attackEvidence = placeId === "nanjing-museum"
+    }[placeId] ?? "AMAP_xuanwu-lake_DISTANCE");
+    const attackTarget = assignedCompetitor?.id ?? (placeId === "nanjing-museum" ? "xuanwu-lake" : "nanjing-museum");
+    const attackEvidence = assignedCompetitor?.evidence.find((item) => item.type === "distance" || item.type === "transit_route")?.id
+      ?? assignedCompetitor?.evidence[0]?.id
+      ?? (placeId === "nanjing-museum"
       ? "AMAP_xuanwu-lake_CATEGORY"
-      : "AMAP_nanjing-museum_CATEGORY";
-    const responseToAttackId = prompt.includes("attack-xuanwu-lake-nanjing-museum")
+      : "AMAP_nanjing-museum_CATEGORY");
+    const responseToAttackId = receivedAttack?.id ?? (prompt.includes("attack-xuanwu-lake-nanjing-museum")
       ? "attack-xuanwu-lake-nanjing-museum"
       : prompt.includes("attack-pioneer-bookstore-nanjing-museum")
         ? "attack-pioneer-bookstore-nanjing-museum"
-        : "attack-nanjing-museum-xuanwu-lake";
-    const attackerPoiId = responseToAttackId.split("-").slice(1, -2).join("-");
+        : "attack-nanjing-museum-xuanwu-lake");
+    const attackerPoiId = receivedAttack?.speakerPoiId ?? responseToAttackId.split("-").slice(1, -2).join("-");
     const values: Record<string, unknown> = {
       intent_profile: {
         intentProfile: {
-          goal: userText.includes("健身") ? "健身" : "休闲",
-          activityIntensity: userText.includes("不想太累") ? "low" : userText.includes("健身") ? "high" : "medium",
+          goal: isExercise ? "运动" : isRest ? "休息" : "休闲",
+          activityIntensity: userText.includes("不想太累") ? "low" : isExercise ? "high" : "medium",
           activityMode: [
             ...(userText.includes("不想太累") && (userText.includes("有点意思") || userText.includes("体验")) ? ["light_exploration"] : []),
             ...(userText.includes("室内") ? ["indoor_walk"] : []),
@@ -52,11 +73,25 @@ export const deterministicModel: StructuredModel = {
           constraints: [
             ...(userText.includes("室内") ? ["indoor"] : []),
             ...(userText.includes("不花钱") ? ["no_cost"] : []),
+            ...(userText.includes("评分高") ? ["评分高"] : []),
+            ...(/近一点|近点|距离近|附近|没那么远/.test(userText) ? ["距离近"] : []),
+            ...(userText.includes("地铁直达") ? ["地铁直达"] : []),
           ],
-          avoid: userText.includes("咖啡") ? ["cafe"] : [],
+          avoid: /不.*咖啡/.test(userText) ? ["cafe"] : [],
+          mentionedCategories: [
+            ...(userText.includes("健身") ? ["fitness"] : []),
+            ...(/咖啡|cafe/i.test(userText) && !/不.*咖啡/.test(userText) ? ["cafe"] : []),
+            ...(userText.includes("电影") ? ["cinema"] : []),
+            ...(userText.includes("书店") ? ["bookstore"] : []),
+          ],
+          ...(specificActivity
+            ? { explicitTarget: { text: specificActivity, specificity: "specific" } }
+            : userText.includes("运动")
+              ? { explicitTarget: { text: "运动", specificity: "broad" } }
+              : {}),
           ...(userText.includes("一个人") ? { companion: "solo" } : {}),
           ...(userText.includes("不花钱") ? { budget: "free" } : {}),
-          missingSlots: userText.includes("室内逛") && !userText.includes("不花钱") ? ["experience_type"] : [],
+          missingSlots: (userText.includes("室内逛") && !userText.includes("不花钱")) || userText.includes("随便逛逛") ? ["experience_type"] : (isExercise && !specificActivity) || isRest ? ["activity_type"] : [],
         },
         preference: {
           activityLevel: "low",
@@ -65,25 +100,45 @@ export const deterministicModel: StructuredModel = {
           culturePreference: 0.8,
           budgetLevel: "medium",
           companions: "solo",
-          freeTextConstraints: ["不要太累", "有点意思"],
+          transportPreference: userText.includes("地铁") ? "metro" : "flexible",
+          distanceTolerance: /近一点|近点|距离近|附近|没那么远/.test(userText) ? "near" : "moderate",
+          freeTextConstraints: [
+            "不要太累",
+            "有点意思",
+            ...(userText.includes("评分高") ? ["评分高"] : []),
+            ...(/近一点|近点|距离近|附近|没那么远/.test(userText) ? ["距离近"] : []),
+            ...(userText.includes("地铁直达") ? ["地铁直达"] : []),
+          ],
         },
         experienceProfile: {
-          activityLevel: userText.includes("健身") ? 0.8 : /安静坐|安静休息|放松/.test(userText) ? 0.1 : 0.7,
-          engagementType: userText.includes("健身") ? "functional" : /安静坐|安静休息|放松/.test(userText) ? "rest" : "exploration",
+          activityLevel: isExercise ? 0.8 : isRest ? 0.1 : 0.7,
+          engagementType: isExercise ? "functional" : isRest ? "rest" : "exploration",
           socialFit: userText.includes("一个人") ? "solo" : "either",
-          pace: /安静坐|安静休息|放松/.test(userText) ? 0.1 : 0.5,
+          pace: isRest ? 0.1 : 0.5,
           spatial: userText.includes("室内") ? "indoor" : "mixed",
-          stimulation: /安静坐|安静休息|放松/.test(userText) ? 0.1 : 0.5,
+          stimulation: isRest ? 0.1 : 0.5,
           costTier: userText.includes("不花钱") ? "free" : "low",
         },
       },
       intent_profile_update: {
-        intentProfile: { goal: "休闲", activityIntensity: "low", activityMode: ["indoor_walk"], experienceGoal: ["exploration"], constraints: ["indoor"], avoid: [], missingSlots: [] },
+        intentProfile: {
+          goal: specificActivity ? `进行${specificActivity}` : "休闲",
+          activityIntensity: specificActivity ? "medium" : "low",
+          activityMode: specificActivity ? ["physical_activity"] : ["indoor_walk"],
+          experienceGoal: specificActivity ? ["exercise"] : ["exploration"],
+          constraints: specificActivity ? [] : ["indoor"],
+          avoid: [],
+          mentionedCategories: [],
+          ...(specificActivity ? { explicitTarget: { text: specificActivity, specificity: "specific" } } : {}),
+          missingSlots: [],
+        },
         preference: {
           activityLevel: "low", indoorPreference: 0.8, naturePreference: 0.4, culturePreference: 0.7,
           budgetLevel: "flexible", companions: "solo", freeTextConstraints: [],
         },
-        experienceProfile: { activityLevel: 0.5, engagementType: "exploration", socialFit: "either", pace: 0.5, spatial: "indoor", stimulation: 0.5, costTier: "low" },
+        experienceProfile: specificActivity
+          ? { activityLevel: 0.7, engagementType: "functional", socialFit: "either", pace: 0.6, spatial: "mixed", stimulation: 0.5, costTier: "low" }
+          : { activityLevel: 0.5, engagementType: "exploration", socialFit: "either", pace: 0.5, spatial: "indoor", stimulation: 0.5, costTier: "low" },
       },
       place_experience_batch: { items: experiencePlaces.map((place) => ({
         poiId: place.poiId,

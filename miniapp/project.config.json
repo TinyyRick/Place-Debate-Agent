@@ -1,0 +1,21 @@
+{
+  "miniprogramRoot": "dist/",
+  "projectname": "place-debate-miniapp",
+  "description": "地点辩论会：三个真实地点为“谁最适合你”当场辩论",
+  "appid": "touristappid",
+  "setting": {
+    "urlCheck": false,
+    "es6": false,
+    "enhance": false,
+    "compileHotReLoad": true,
+    "postcss": false,
+    "minified": false,
+    "babelSetting": {
+      "ignorePlugins": [],
+      "ignoreFiles": []
+    }
+  },
+  "compileType": "miniprogram",
+  "libVersion": "trial",
+  "condition": {}
+}

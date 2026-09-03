@@ -1,0 +1,22 @@
+/* home 输入页 */
+
+.example-chips { display: flex; flex-direction: row; flex-wrap: wrap; margin-top: 12px; }
+.chip-example {
+  background: #fffdfa;
+  border: 1.5px solid var(--line);
+  color: var(--muted);
+}
+.chip-example:active { background: var(--primary-soft); color: var(--primary-deep); }
+
+.home-foot {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  margin-top: 26px;
+}
+.foot-dot { width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+.d-violet { background: var(--candy-violet); }
+.d-sky { background: var(--candy-sky); }
+.d-mint { background: var(--candy-mint); }
+.foot-text { color: var(--muted); font-size: 13px; font-weight: 600; margin-left: 4px; }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { RANKING_WEIGHTS } from "@/lib/ranking/config";
-import { createFactPacks, filterIntentCompatiblePois, hardFilterPois, rankCandidates, selectDiverseCandidates } from "@/lib/ranking/ranker";
+import { applyKnownCandidateRequirements, applyRouteCandidateRequirements, createFactPacks, deriveRankingRequirements, filterIntentCompatiblePois, finalRankCandidates, hardFilterPois, rankCandidates, selectDiverseCandidates } from "@/lib/ranking/ranker";
 import { PlaceCandidateSchema, type PlaceCandidate } from "@/lib/schemas/place";
 import type { UserPreference } from "@/lib/schemas/preference";
 import type { ExperienceProfile } from "@/lib/schemas/experience";
@@ -41,6 +41,7 @@ describe("destination quality filtering", () => {
       candidate({ id: "utility", name: "法物流通处", category: "购物服务;购物相关场所", typeCode: "060000" }),
       candidate({ id: "school", name: "北京东路小学", category: "科教文化服务;学校;小学", typeCode: "140000" }),
       candidate({ id: "research", name: "地质研究所", category: "科教文化服务;科教文化场所", typeCode: "140000" }),
+      candidate({ id: "closed", name: "武庙遗址(不对外开放)", category: "风景名胜;旅游景点", typeCode: "110000" }),
       candidate({ id: "museum", name: "南京博物院", category: "科教文化服务;博物馆", typeCode: "140100", rating: 4.8 }),
       candidate({ id: "bookstore", name: "先锋书店", category: "购物服务;专卖店", typeCode: "060000", rating: 4.7 }),
     ]);
@@ -75,6 +76,22 @@ describe("destination quality filtering", () => {
 });
 
 describe("deterministic ranking and diversity", () => {
+  it("treats high rating and direct metro as verifiable requirements rather than labels", () => {
+    const requirements = deriveRankingRequirements({ goal: "评分高、近一点、地铁直达的羽毛球馆", activityIntensity: "high", activityMode: ["sports"], experienceGoal: ["functional"], constraints: ["评分高", "距离近", "地铁直达"], avoid: [], mentionedCategories: [], missingSlots: [] });
+    expect(requirements).toEqual({ preferNear: true, preferHighRating: true, requireDirectMetro: true });
+    const direct = candidate({ id: "direct", name: "直达羽毛球馆", category: "体育休闲服务;运动场馆", typeCode: "080101", rating: 4.6, route: { walking: { available: true }, driving: { available: true }, transit: { status: "available", available: true, durationMinutes: 28, walkingDistanceMeters: 500, transferCount: 0, usesMetro: true, directMetro: true, lineNames: ["地铁3号线"] } } });
+    const transfer = candidate({ id: "transfer", name: "换乘羽毛球馆", category: "体育休闲服务;运动场馆", typeCode: "080101", rating: 4.8, route: { walking: { available: true }, driving: { available: true }, transit: { status: "available", available: true, durationMinutes: 25, walkingDistanceMeters: 300, transferCount: 1, usesMetro: true, directMetro: false, lineNames: ["地铁1号线", "地铁2号线"] } } });
+    const lowRating = candidate({ id: "low", name: "低分羽毛球馆", category: "体育休闲服务;运动场馆", typeCode: "080101", rating: 4.1, route: direct.route });
+    const ratingEligible = applyKnownCandidateRequirements([direct, transfer, lowRating], requirements);
+    expect(ratingEligible.map((item) => item.id)).toEqual(["direct", "transfer"]);
+    expect(applyRouteCandidateRequirements(ratingEligible, requirements).map((item) => item.id)).toEqual(["direct"]);
+    const slower = candidate({ ...direct, id: "slower", name: "较远直达羽毛球馆", distanceMeters: 3_800, rating: 4.2, route: { ...direct.route!, transit: { ...direct.route!.transit!, durationMinutes: 55, walkingDistanceMeters: 2_600 } } });
+    const faster = candidate({ ...direct, id: "faster", name: "较近直达羽毛球馆", distanceMeters: 3_600, rating: 4.2, route: { ...direct.route!, transit: { ...direct.route!.transit!, durationMinutes: 36, walkingDistanceMeters: 1_600 } } });
+    const metroPreference = { ...preference, transportPreference: "metro" as const };
+    expect(finalRankCandidates([slower, faster], metroPreference, leisureExperience, true, requirements).map((item) => item.id)).toEqual(["faster", "slower"]);
+    expect(createFactPacks([direct])[0].evidence).toEqual(expect.arrayContaining([expect.objectContaining({ type: "transit_route", source: "amap-route-2.0" })]));
+  });
+
   it("uses the configured worth-going weights and works when rating is absent", () => {
     expect(Object.values(RANKING_WEIGHTS).reduce((sum, weight) => sum + weight, 0)).toBe(1);
     const ranked = rankCandidates(hardFilterPois([
@@ -98,6 +115,16 @@ describe("deterministic ranking and diversity", () => {
     const selected = selectDiverseCandidates(ranked);
     expect(new Set(selected.map((item) => item.destinationCategory)).size).toBe(3);
     expect(selected).toHaveLength(3);
+  });
+
+  it("does not diversify outside an explicitly requested category", () => {
+    const ranked = rankCandidates(hardFilterPois([
+      candidate({ id: "bookstore-a", name: "先锋书店", category: "购物服务;专卖店;书店", typeCode: "061205", rating: 4.8 }),
+      candidate({ id: "bookstore-b", name: "文都书店", category: "购物服务;专卖店;书店", typeCode: "061205", rating: 4.6, distanceMeters: 900, longitude: 118.81 }),
+      candidate({ id: "museum", name: "南京博物院", category: "科教文化服务;博物馆", typeCode: "140100", rating: 4.9 }),
+    ]), preference, leisureExperience);
+    const selected = selectDiverseCandidates(ranked, 3, ["bookstore"]);
+    expect(selected.map((candidate) => candidate.destinationCategory)).toEqual(["bookstore", "bookstore"]);
   });
 
   it("falls back beyond the preferred radius without ever admitting infrastructure", () => {
@@ -124,6 +151,27 @@ describe("deterministic ranking and diversity", () => {
       `AMAP_${factPack.id}_RATING`,
       `DERIVED_${factPack.id}_ACTIVITY_PROFILE`,
     ]);
+  });
+
+  it("creates separate strategy-route and per-capita-cost evidence", () => {
+    const [factPack] = createFactPacks([candidate({
+      id: "cafe", name: "测试咖啡馆", category: "餐饮服务;咖啡厅", typeCode: "050500", averageCostYuan: 42,
+      route: {
+        walking: { available: true, durationMinutes: 18 }, driving: { available: true, durationMinutes: 7 },
+        transitStrategies: {
+          fastest: { status: "available", available: true, durationMinutes: 15, walkingDistanceMeters: 800, transferCount: 1, usesMetro: true, directMetro: false, lineNames: ["1号线", "2号线"] },
+          leastWalking: { status: "available", available: true, durationMinutes: 24, walkingDistanceMeters: 120, transferCount: 1, usesMetro: true, directMetro: false, lineNames: ["1号线", "2号线"] },
+          leastTransfers: { status: "available", available: true, durationMinutes: 25, walkingDistanceMeters: 300, transferCount: 0, usesMetro: true, directMetro: true, lineNames: ["3号线"] },
+        },
+      },
+    })]);
+    expect(factPack.averageCostYuan).toBe(42);
+    expect(factPack.evidence.map((item) => item.id)).toEqual(expect.arrayContaining([
+      "AMAP_cafe_AVERAGE_COST",
+      "AMAP_cafe_TRANSIT_FASTEST",
+      "AMAP_cafe_TRANSIT_LEASTWALKING",
+      "AMAP_cafe_TRANSIT_LEASTTRANSFERS",
+    ]));
   });
 });
 

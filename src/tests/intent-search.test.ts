@@ -23,7 +23,7 @@ describe("intent-driven AMap search plans", () => {
 
   it("keeps uncertain indoor exploration in missingSlots and records exclusions", async () => {
     const { intentProfile } = await interpretIntent("想去室内逛逛，不想去咖啡馆", deterministicModel);
-    expect(intentProfile).toEqual({ goal: "休闲", activityIntensity: "medium", activityMode: ["indoor_walk"], experienceGoal: [], constraints: ["indoor"], avoid: ["cafe"], missingSlots: ["experience_type"] });
+    expect(intentProfile).toEqual({ goal: "休闲", activityIntensity: "medium", activityMode: ["indoor_walk"], experienceGoal: [], constraints: ["indoor"], avoid: ["cafe"], mentionedCategories: [], missingSlots: ["experience_type"] });
   });
 
   it("treats low-intensity exploration as walking around, not mostly seated", async () => {
@@ -32,6 +32,58 @@ describe("intent-driven AMap search plans", () => {
     expect(intentProfile).toMatchObject({ activityIntensity: "low", activityMode: ["light_exploration"], experienceGoal: ["exploration"] });
     expect(planned.movementPreference).toBe("walk_around");
     expect(planned.activityLevel).toBe("low");
+  });
+
+  it("preserves explicitly named café and cinema categories as strict AMap queries", async () => {
+    const cafe = await interpretIntent("想找个安静咖啡馆坐一会儿", deterministicModel);
+    const cafePlan = createSearchPlan(cafe.intentProfile, cafe.experienceProfile);
+    expect(cafe.intentProfile.mentionedCategories).toEqual(["cafe"]);
+    expect(cafePlan.strictCategoryMatch).toBe(true);
+    expect(cafePlan.queries.map((query) => query.label)).toEqual(["cafe"]);
+    expect(cafePlan.queries[0]?.typeCodes).toBe("050000");
+
+    const cinema = await interpretIntent("想带朋友看电影", deterministicModel);
+    const cinemaPlan = createSearchPlan(cinema.intentProfile, cinema.experienceProfile);
+    expect(cinema.intentProfile.mentionedCategories).toEqual(["cinema"]);
+    expect(cinemaPlan.strictCategoryMatch).toBe(true);
+    expect(cinemaPlan.queries.map((query) => query.label)).toEqual(["cinema"]);
+    expect(cinemaPlan.queries[0]?.typeCodes).toBe("080600");
+  });
+
+  it.each(["羽毛球", "游泳", "攀岩"])("preserves the concrete %s activity as an exact AMap keyword", async (target) => {
+    const parsed = await interpretIntent(`想找评分高、没那么远的${target}场馆`, deterministicModel);
+    const plan = createSearchPlan(parsed.intentProfile, parsed.experienceProfile);
+    expect(parsed.intentProfile.explicitTarget).toEqual({ text: target, specificity: "specific" });
+    expect(parsed.intentProfile.missingSlots).not.toContain("activity_type");
+    expect(plan).toMatchObject({ strictTargetMatch: true, strictCategoryMatch: false, allowedCategories: ["other"] });
+    expect(plan.queries).toEqual([{ label: "explicit-target", typeCodes: "", keywords: [target], searchKeyword: target }]);
+  });
+
+  it("treats a named internet cafe as the target instead of clarifying the word 坐坐", async () => {
+    const parsed = await interpretIntent("想找个网吧坐坐", deterministicModel);
+    const plan = createSearchPlan(parsed.intentProfile, parsed.experienceProfile);
+    expect(parsed.intentProfile.explicitTarget).toEqual({ text: "网吧", specificity: "specific" });
+    expect(parsed.intentProfile.missingSlots).not.toContain("activity_type");
+    expect(plan).toMatchObject({ strictTargetMatch: true, strictCategoryMatch: false, allowedCategories: ["other"] });
+    expect(plan.queries).toEqual([{ label: "explicit-target", typeCodes: "", keywords: ["网吧"], searchKeyword: "网吧" }]);
+  });
+
+  it("uses café plus park as the conservative indoor-rest fallback when no category was named", () => {
+    const plan = createSearchPlan({
+      goal: "安静休息", activityIntensity: "low", activityMode: ["resting"], experienceGoal: ["relaxation"],
+      constraints: ["indoor"], avoid: [], mentionedCategories: [], missingSlots: [],
+    }, { activityLevel: 0.2, engagementType: "rest", socialFit: "solo", pace: 0.2, spatial: "indoor", stimulation: 0.2, costTier: "low" });
+    expect(plan.queries.map((query) => query.label)).toEqual(["cafe", "park"]);
+    expect(plan.strictCategoryMatch).toBe(false);
+  });
+
+  it("keeps casual browsing in the non-strict fallback path rather than forcing a clarification", async () => {
+    const { intentProfile, experienceProfile } = await interpretIntent("周末随便逛逛", deterministicModel);
+    const plan = createSearchPlan(intentProfile, experienceProfile);
+    expect(intentProfile.mentionedCategories).toEqual([]);
+    expect(intentProfile.missingSlots).not.toContain("experience_type");
+    expect(plan.strictCategoryMatch).toBe(false);
+    expect(plan.queries.length).toBeGreaterThan(1);
   });
 
   it("retrieves and ranks a mixed indoor exploration pool rather than only malls", async () => {

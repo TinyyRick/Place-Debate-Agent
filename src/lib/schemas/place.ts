@@ -4,7 +4,7 @@ import { ExperienceProfileSchema } from "./experience";
 
 export const EvidenceSchema = z.object({
   id: z.string().min(1),
-  type: z.enum(["category", "distance", "route_time", "weather", "weather_assessment", "rating", "location", "activity_profile", "metro_access"]),
+  type: z.enum(["category", "distance", "route_time", "transit_route", "average_cost", "weather", "weather_assessment", "rating", "location", "activity_profile", "metro_access"]),
   value: z.union([z.string(), z.number()]),
   source: z.string().min(1),
   fetchedAt: z.string().optional(),
@@ -48,6 +48,7 @@ export const PlaceCandidateSchema = z.object({
   address: z.string(),
   distanceMeters: z.number().nonnegative(),
   rating: z.number().min(0).max(5).optional(),
+  averageCostYuan: z.number().positive().optional(),
   route: RouteContextSchema.optional(),
   weather: WeatherContextSchema.optional(),
   locationLabel: z.string().optional(),
@@ -60,6 +61,7 @@ export const PlaceCandidateSchema = z.object({
   activityProfile: PlaceActivityProfileSchema.optional(),
   experienceProfile: ExperienceProfileSchema.optional(),
   metroAccess: MetroAccessContextSchema.optional(),
+  imageUrl: z.string().url().optional(),
 });
 
 export const PlaceFactPackSchema = z.object({
@@ -72,8 +74,10 @@ export const PlaceFactPackSchema = z.object({
   weather: WeatherContextSchema.optional(),
   locationLabel: z.string().optional(),
   rating: z.number().min(0).max(5).optional(),
+  averageCostYuan: z.number().positive().optional(),
   activityProfile: PlaceActivityProfileSchema.optional(),
   metroAccess: MetroAccessContextSchema.optional(),
+  imageUrl: z.string().url().optional(),
   evidence: z.array(EvidenceSchema).min(1),
 });
 

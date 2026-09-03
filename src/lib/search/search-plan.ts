@@ -1,5 +1,6 @@
 import type { DestinationCategory } from "@/lib/schemas/place";
 import type { IntentProfile, UserIntent } from "@/lib/schemas/intent";
+import type { ExperienceProfile } from "@/lib/schemas/experience";
 import { SearchPlanSchema, type SearchPlan } from "@/lib/schemas/search-plan";
 
 type SearchableCategory = Exclude<DestinationCategory, "other">;
@@ -20,7 +21,9 @@ const QUERY_BY_CATEGORY: Record<SearchableCategory, SearchQuery> = {
 };
 
 function profileText(profile: IntentProfile) {
-  return [profile.goal, ...profile.activityMode, ...profile.experienceGoal, ...profile.constraints, ...profile.avoid].join(" ").toLowerCase();
+  // `avoid` is handled by hasAvoidedCategory. Including it here would make
+  // “不去咖啡馆” look like a positive request for the cafe category.
+  return [profile.goal, ...profile.activityMode, ...profile.experienceGoal, ...profile.constraints].join(" ").toLowerCase();
 }
 
 function hasAvoidedCategory(profile: IntentProfile, category: SearchableCategory) {
@@ -34,7 +37,17 @@ function hasAvoidedCategory(profile: IntentProfile, category: SearchableCategory
   return terms[category].some((term) => avoided.includes(term));
 }
 
-function resolveCategories(profile: IntentProfile): SearchableCategory[] {
+function activeMentionedCategories(profile: IntentProfile): SearchableCategory[] {
+  return profile.mentionedCategories.filter((category) => !hasAvoidedCategory(profile, category));
+}
+
+function hasSpecificTarget(profile: IntentProfile) {
+  return profile.explicitTarget?.specificity === "specific";
+}
+
+function resolveCategories(profile: IntentProfile, experienceProfile?: ExperienceProfile): SearchableCategory[] {
+  const explicitCategories = activeMentionedCategories(profile);
+  if (explicitCategories.length > 0) return explicitCategories;
   const text = profileText(profile);
   // These are stable experience directions written by the clarification node.
   // They take precedence over the original broad free-text interpretation.
@@ -42,44 +55,92 @@ function resolveCategories(profile: IntentProfile): SearchableCategory[] {
   if (text.includes("exhibition_exploration")) return ["museum", "gallery"];
   if (text.includes("commercial_browsing")) return ["shopping"];
   if (/健身|锻炼|瑜伽|游泳/.test(text)) return ["fitness"];
+  if (/咖啡|cafe/.test(text)) return ["cafe"];
+  if (/电影|影院|影城|cinema/.test(text)) return ["cinema"];
   if (/学习|看书|自习|阅读/.test(text)) return ["bookstore", "cultural"];
   if (/购物|商场|逛街/.test(text)) return ["shopping"];
+
+  // A resolved clarification is stronger than broad words retained from the
+  // original request (for example, a generic leisure goal). Otherwise an
+  // explicit "室内坐着休息" answer is incorrectly decoded as indoor browsing.
+  if (experienceProfile?.engagementType === "rest") {
+    return experienceProfile.spatial === "indoor" ? ["cafe", "park"] : ["park"];
+  }
 
   const indoorExploration = /室内|indoor/.test(text)
     && (/逛|walk|exploration|探索/.test(text) || profile.goal.includes("休闲"));
   if (indoorExploration) return ["shopping", "museum", "gallery", "bookstore", "cultural"];
 
   if (/文化|展览|博物|美术|书店|阅读/.test(text)) return ["museum", "gallery", "bookstore", "cultural"];
+
+  if (experienceProfile) {
+    const categories = new Set<SearchableCategory>();
+    switch (experienceProfile.engagementType) {
+      case "exploration":
+        if (experienceProfile.spatial === "outdoor") categories.add("park");
+        categories.add("museum"); categories.add("gallery"); categories.add("cultural");
+        break;
+      case "consumption":
+        categories.add("shopping");
+        if (experienceProfile.spatial === "indoor") { categories.add("cinema"); categories.add("cafe"); }
+        break;
+      case "functional":
+        categories.add("fitness"); categories.add("shopping");
+        break;
+      case "social":
+        categories.add("cafe"); categories.add("shopping"); categories.add("cultural");
+        break;
+    }
+    if (categories.size > 0) return [...categories];
+  }
   return ["park", "museum", "bookstore", "gallery", "cultural"];
 }
 
-function resolveSearchIntent(profile: IntentProfile): UserIntent {
-  const categories = resolveCategories(profile);
+function resolveSearchIntent(profile: IntentProfile, experienceProfile?: ExperienceProfile): UserIntent {
+  const inferredCategories = resolveCategories(profile, experienceProfile);
   const text = profileText(profile);
+  const explicitTarget = hasSpecificTarget(profile) ? profile.explicitTarget?.text : undefined;
+  const explicitCategories = activeMentionedCategories(profile);
+  const categories: DestinationCategory[] = explicitTarget && explicitCategories.length === 0
+    ? ["other"]
+    : inferredCategories;
   const primaryGoal = categories[0] === "fitness" ? "fitness" : /学习|看书|自习|阅读/.test(text) ? "study" : categories[0] === "shopping" ? "shopping" : "leisure";
   const excludedCategories = (Object.keys(QUERY_BY_CATEGORY) as SearchableCategory[])
     .filter((category) => hasAvoidedCategory(profile, category));
   return {
     primaryGoal,
-    requiredCategories: categories.filter((category) => !excludedCategories.includes(category)),
+    requiredCategories: categories.filter((category) => category === "other" || !excludedCategories.includes(category)),
     excludedCategories,
-    searchTerms: categories.flatMap((category) => QUERY_BY_CATEGORY[category].keywords).slice(0, 4),
-    strictCategoryMatch: primaryGoal !== "leisure",
+    searchTerms: explicitTarget ? [explicitTarget] : inferredCategories.flatMap((category) => QUERY_BY_CATEGORY[category].keywords).slice(0, 4),
+    strictCategoryMatch: activeMentionedCategories(profile).length > 0,
     summary: profile.goal,
   };
 }
 
-export function createSearchPlan(intentProfile: IntentProfile): SearchPlan {
-  const intent = resolveSearchIntent(intentProfile);
+export function createSearchPlan(intentProfile: IntentProfile, experienceProfile?: ExperienceProfile): SearchPlan {
+  const intent = resolveSearchIntent(intentProfile, experienceProfile);
   const categories = intent.requiredCategories.filter((category): category is SearchableCategory => category !== "other");
+  const explicitTarget = hasSpecificTarget(intentProfile) ? intentProfile.explicitTarget?.text : undefined;
+  const explicitCategories = activeMentionedCategories(intentProfile);
+  const categoryQueries = categories.map((category) => QUERY_BY_CATEGORY[category]);
+  const queries = explicitTarget
+    ? [{
+        label: "explicit-target",
+        typeCodes: explicitCategories[0] ? QUERY_BY_CATEGORY[explicitCategories[0]].typeCodes : "",
+        keywords: [explicitTarget],
+        searchKeyword: explicitTarget,
+      }]
+    : categoryQueries;
   return SearchPlanSchema.parse({
     intentProfile,
     intent,
-    radiusMeters: intent.primaryGoal === "fitness" ? 10_000 : 8_000,
+    radiusMeters: explicitTarget || intent.primaryGoal === "fitness" ? 10_000 : 8_000,
     // Every allowed category gets a concrete AMap request; no category is only
     // declarative metadata in the plan.
-    queries: categories.map((category) => QUERY_BY_CATEGORY[category]),
-    allowedCategories: categories,
+    queries,
+    allowedCategories: intent.requiredCategories,
+    strictCategoryMatch: intent.strictCategoryMatch,
+    strictTargetMatch: Boolean(explicitTarget),
     prohibitedCategories: intent.excludedCategories,
     rankingPriorities: [...intentProfile.experienceGoal, ...intentProfile.activityMode, ...intentProfile.constraints, intentProfile.avoid.length ? "avoid_exclusions" : "destination_quality"],
     speculativeQueries: [],

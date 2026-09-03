@@ -6,7 +6,7 @@ export const UserPreferenceSchema = z.object({
   naturePreference: z.number().min(0).max(1),
   culturePreference: z.number().min(0).max(1),
   budgetLevel: z.enum(["low", "medium", "flexible"]),
-  companions: z.enum(["solo", "couple", "friends", "family"]),
+  companions: z.enum(["solo", "couple", "friends", "family"]).catch("solo"),
   transportPreference: z.enum(["walking", "driving", "metro", "flexible"]).default("flexible"),
   movementPreference: z.enum(["flexible", "mostly_seated", "walk_around", "light_active"]).default("flexible"),
   distanceTolerance: z.enum(["near", "moderate", "flexible_if_transit"]).default("near"),

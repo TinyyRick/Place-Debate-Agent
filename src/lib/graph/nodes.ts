@@ -1,17 +1,17 @@
 import { interpretIntent, updateIntentFromClarification, updatePreferenceFromIntervention } from "@/lib/agents/intent-agent";
-import { moderateDebate } from "@/lib/agents/moderator-agent";
+import { buildModeratorResult } from "@/lib/agents/moderator-agent";
 import { createPlaceAgent } from "@/lib/agents/place-agent-factory";
 import type { StructuredModel } from "@/lib/agents/model-factory";
 import { retrieveNearbyPoisWithMetrics } from "@/lib/amap/places";
 import { createSearchPlan } from "@/lib/search/search-plan";
 import { planExperience } from "@/lib/intent/experience-planner";
 import { scorePlaceExperiences } from "@/lib/experience/place-experience-scorer";
-import { getRoutes } from "@/lib/amap/routes";
+import { getRoutes, type RouteRequestOptions } from "@/lib/amap/routes";
 import { resolveLocation } from "@/lib/amap/location";
 import { getCurrentWeather } from "@/lib/amap/weather";
 import { getMetroAccess } from "@/lib/amap/metro";
-import { createFactPacks, filterIntentCompatiblePois, finalRankCandidates, hardFilterPois, rankCandidates, scoreFinalistsAfterIntervention, selectDiverseCandidates } from "@/lib/ranking/ranker";
-import type { PlaceCandidate } from "@/lib/schemas/place";
+import { applyKnownCandidateRequirements, applyRouteCandidateRequirements, createFactPacks, deriveRankingRequirements, filterIntentCompatiblePois, finalRankCandidates, hardFilterPois, rankCandidates, scoreFinalistsAfterIntervention, selectDiverseCandidates } from "@/lib/ranking/ranker";
+import type { PlaceCandidate, PlaceFactPack } from "@/lib/schemas/place";
 import type { Coordinates, LocationContext, RouteContext, WeatherContext } from "@/lib/schemas/location";
 import { CandidateDecisionSchema, OpeningOutputSchema, type DebateMessage } from "@/lib/schemas/debate";
 import type { DebateStateSchema } from "./state";
@@ -47,6 +47,59 @@ function requireSearchPlan(state: typeof DebateStateSchema.State): SearchPlan {
   return state.searchPlan;
 }
 
+function numericRank(place: PlaceFactPack, places: PlaceFactPack[], value: (item: PlaceFactPack) => number | undefined, lowerIsBetter: boolean) {
+  const own = value(place);
+  if (own === undefined) return undefined;
+  return 1 + places.filter((item) => {
+    const other = value(item);
+    return other !== undefined && (lowerIsBetter ? other < own : other > own);
+  }).length;
+}
+
+export function buildOpeningComparison(place: PlaceFactPack, places: PlaceFactPack[]) {
+  return {
+    candidateCount: places.length,
+    distanceRank: numericRank(place, places, (item) => item.distanceMeters, true) ?? places.length,
+    ...(numericRank(place, places, (item) => item.route?.walking.durationMinutes, true) === undefined ? {} : { walkingTimeRank: numericRank(place, places, (item) => item.route?.walking.durationMinutes, true) }),
+    ...(numericRank(place, places, (item) => item.rating, false) === undefined ? {} : { ratingRank: numericRank(place, places, (item) => item.rating, false) }),
+    ...(numericRank(place, places, (item) => item.route?.transit?.durationMinutes, true) === undefined ? {} : { transitTimeRank: numericRank(place, places, (item) => item.route?.transit?.durationMinutes, true) }),
+    ...(numericRank(place, places, (item) => item.averageCostYuan, true) === undefined ? {} : { costRank: numericRank(place, places, (item) => item.averageCostYuan, true) }),
+  };
+}
+
+/** Positive only when the speaker has a material, evidence-backed advantage over the target. */
+export function battleAdvantageScore(speaker: PlaceFactPack, target: PlaceFactPack) {
+  let score = 0;
+  if (target.distanceMeters - speaker.distanceMeters >= Math.max(300, target.distanceMeters * 0.2)) score += 2;
+  if (speaker.rating !== undefined && target.rating !== undefined && speaker.rating - target.rating >= 0.2) score += 1;
+  const walkingGap = (target.route?.walking.durationMinutes ?? 0) - (speaker.route?.walking.durationMinutes ?? 0);
+  if (walkingGap >= 5) score += 2;
+  const speakerTransit = speaker.route?.transit;
+  const targetTransit = target.route?.transit;
+  if (speakerTransit?.directMetro && targetTransit && !targetTransit.directMetro) score += 3;
+  if (speakerTransit?.durationMinutes !== undefined && targetTransit?.durationMinutes !== undefined && targetTransit.durationMinutes - speakerTransit.durationMinutes >= 8) score += 2;
+  if (speakerTransit?.walkingDistanceMeters !== undefined && targetTransit?.walkingDistanceMeters !== undefined && targetTransit.walkingDistanceMeters - speakerTransit.walkingDistanceMeters >= 500) score += 1;
+  const speakerStrategies = speaker.route?.transitStrategies;
+  const targetStrategies = target.route?.transitStrategies;
+  if (speakerStrategies?.fastest?.durationMinutes !== undefined && targetStrategies?.fastest?.durationMinutes !== undefined && targetStrategies.fastest.durationMinutes - speakerStrategies.fastest.durationMinutes >= 8) score += 2;
+  if (speakerStrategies?.leastWalking?.walkingDistanceMeters !== undefined && targetStrategies?.leastWalking?.walkingDistanceMeters !== undefined && targetStrategies.leastWalking.walkingDistanceMeters - speakerStrategies.leastWalking.walkingDistanceMeters >= 500) score += 2;
+  if (speakerStrategies?.leastTransfers?.transferCount !== undefined && targetStrategies?.leastTransfers?.transferCount !== undefined && targetStrategies.leastTransfers.transferCount > speakerStrategies.leastTransfers.transferCount) score += 2;
+  if (speaker.averageCostYuan !== undefined && target.averageCostYuan !== undefined) {
+    const costGap = target.averageCostYuan - speaker.averageCostYuan;
+    if (costGap >= Math.max(15, target.averageCostYuan * 0.2)) score += 2;
+  }
+  return score;
+}
+
+/** Chooses the more informative of the two balanced three-place cycle directions. */
+export function planBattlePairings(places: PlaceFactPack[]) {
+  if (places.length !== 3) return [];
+  const cycles = [1, 2].map((shift) => places.map((speaker, index) => ({ speaker, target: places[(index + shift) % places.length] })));
+  const selected = cycles.sort((left, right) => right.reduce((sum, pair) => sum + battleAdvantageScore(pair.speaker, pair.target), 0)
+    - left.reduce((sum, pair) => sum + battleAdvantageScore(pair.speaker, pair.target), 0))[0];
+  return selected.filter((pair) => battleAdvantageScore(pair.speaker, pair.target) > 0);
+}
+
 /** Only uncertainty that changes the recommendation direction may interrupt. */
 export function coreClarificationSlots(slots: IntentProfile["missingSlots"]) {
   return slots.filter((slot): slot is "experience_type" | "activity_type" => slot === "experience_type" || slot === "activity_type");
@@ -58,7 +111,7 @@ export interface PlaceDataSource {
 export interface ContextDataSource {
   resolveLocation: (gps?: Coordinates) => Promise<LocationContext>;
   getWeather: (adcode: string) => Promise<WeatherContext>;
-  getRoutes: (origin: Coordinates, destination: PlaceCandidate) => Promise<RouteContext>;
+  getRoutes: (origin: Coordinates, destination: PlaceCandidate, options?: RouteRequestOptions) => Promise<RouteContext>;
   getMetroAccess?: (candidate: PlaceCandidate) => Promise<import("@/lib/schemas/place").MetroAccessContext>;
 }
 
@@ -78,26 +131,47 @@ export function createDebateNodes(
       return { userPreference: currentPreference, currentPreference, experienceProfile: requireExperienceProfile(state) };
     },
 
-    completenessCheck: (state: typeof DebateStateSchema.State) => ({ needsClarification: coreClarificationSlots(requireIntentProfile(state).missingSlots).length > 0 }),
+    completenessCheck: (state: typeof DebateStateSchema.State) => {
+      const profile = requireIntentProfile(state);
+      const slots = coreClarificationSlots(profile.missingSlots)
+        .filter((slot) => !(slot === "activity_type" && (profile.mentionedCategories.length > 0 || profile.explicitTarget?.specificity === "specific")));
+      return { needsClarification: slots.length > 0 };
+    },
 
     clarificationInterrupt: async (state: typeof DebateStateSchema.State) => {
       const profile = requireIntentProfile(state);
+      const currentExperienceProfile = requireExperienceProfile(state);
       const slots = coreClarificationSlots(profile.missingSlots);
       const experienceDirection = slots.includes("experience_type");
-      const question = experienceDirection
+      const question = currentExperienceProfile.engagementType === "functional"
+        ? "你更偏向哪种运动环境？"
+        : currentExperienceProfile.engagementType === "rest"
+        ? "你更想怎么休息？"
+        : experienceDirection
         ? "你更想哪种？"
         : "你更想做哪类活动？";
-      const options = experienceDirection
+      const options = profile.mentionedCategories.includes("fitness")
+        ? ["健身房/健身中心", "户外运动场", "游泳馆", "都可以，直接推荐"]
+        : currentExperienceProfile.engagementType === "functional"
+        ? ["优先室内运动", "优先户外运动", "室内外都可以，直接推荐"]
+        : currentExperienceProfile.engagementType === "rest"
+        ? ["室内坐着休息", "室内轻松走走/逛逛", "户外阴凉处休息", "室内外都可以，直接推荐"]
+        : experienceDirection
         ? ["商场/商业空间", "展览馆/博物馆", "书店/文化空间", "都可以，直接推荐"]
         : ["轻松散步/公园", "逛展/文化空间", "商场/商业空间", "都可以，直接推荐"];
-      const resumed = interrupt({ intentProfile: profile, missingSlots: slots, question, options }) as { answer?: unknown } | string;
+      const resumed = interrupt({
+        intentProfile: profile,
+        missingSlots: slots,
+        question,
+        options,
+      }) as { answer?: unknown } | string;
       const answer = typeof resumed === "string" ? resumed : typeof resumed?.answer === "string" ? resumed.answer : "直接推荐";
       const { intentProfile, preference, experienceProfile } = await updateIntentFromClarification(state.originalQuery, profile, answer, model);
       return { intentProfile, experienceProfile, userPreference: preference, currentPreference: preference, needsClarification: false };
     },
 
     createSearchPlan: (state: typeof DebateStateSchema.State) => {
-      const searchPlan = createSearchPlan(requireIntentProfile(state));
+      const searchPlan = createSearchPlan(requireIntentProfile(state), requireExperienceProfile(state));
       return { searchPlan, userIntent: searchPlan.intent };
     },
 
@@ -121,19 +195,36 @@ export function createDebateNodes(
       return { scoredPois: scored.candidates, experienceScoringMetrics: scored.metrics };
     },
 
-    filterPlaces: (state: typeof DebateStateSchema.State) => ({
-      filteredPois: filterIntentCompatiblePois(state.scoredPois, requireExperienceProfile(state))
-        .filter((candidate) => !state.excludedPoiIds.includes(candidate.id)),
-    }),
+    filterPlaces: (state: typeof DebateStateSchema.State) => {
+      const searchPlan = requireSearchPlan(state);
+      const explicitTarget = searchPlan.strictTargetMatch ? searchPlan.intentProfile.explicitTarget?.text : undefined;
+      return {
+        filteredPois: filterIntentCompatiblePois(
+          state.scoredPois,
+          requireExperienceProfile(state),
+          searchPlan.strictCategoryMatch ? searchPlan.allowedCategories : undefined,
+          explicitTarget,
+        ).filter((candidate) => !state.excludedPoiIds.includes(candidate.id)),
+      };
+    },
 
     preliminaryRank: (state: typeof DebateStateSchema.State) => {
-      const rankedCandidates = rankCandidates(state.filteredPois, requirePreference(state), requireExperienceProfile(state));
-      const selectedCandidates = selectDiverseCandidates(rankedCandidates);
+      const searchPlan = requireSearchPlan(state);
+      const requirements = deriveRankingRequirements(searchPlan.intentProfile);
+      const eligibleCandidates = applyKnownCandidateRequirements(state.filteredPois, requirements);
+      if (requirements.preferHighRating && eligibleCandidates.length === 0) throw new Error("没有找到评分达到 4.2 且符合其他要求的地点。");
+      const rankedCandidates = rankCandidates(eligibleCandidates, requirePreference(state), requireExperienceProfile(state), searchPlan.strictTargetMatch, requirements);
+      const routeCandidateLimit = requirePreference(state).transportPreference === "metro" ? Math.min(10, rankedCandidates.length) : 3;
+      const selectedCandidates = searchPlan.strictTargetMatch
+        ? rankedCandidates.slice(0, routeCandidateLimit)
+        : selectDiverseCandidates(rankedCandidates, routeCandidateLimit, searchPlan.strictCategoryMatch ? searchPlan.allowedCategories : undefined);
       return { rankedCandidates: rankedCandidates.slice(0, 10), selectedCandidates };
     },
 
     candidateQualityCheck: (state: typeof DebateStateSchema.State) => {
-      if (state.selectedCandidates.length < 3) {
+      const searchPlan = requireSearchPlan(state);
+      const requirements = deriveRankingRequirements(searchPlan.intentProfile);
+      if (state.selectedCandidates.length < 3 && !searchPlan.strictCategoryMatch && !searchPlan.strictTargetMatch && !requirements.preferHighRating && !requirements.requireDirectMetro) {
         throw new Error(`Only ${state.selectedCandidates.length} candidates match the ${requireIntent(state).primaryGoal} intent; no unrelated fallback is allowed.`);
       }
       return {};
@@ -144,14 +235,26 @@ export function createDebateNodes(
       const weather = await contextDataSource.getWeather(state.location.adcode);
       const enrichedCandidates = await Promise.all(state.selectedCandidates.map(async (candidate) => ({
         ...candidate,
-        route: await contextDataSource.getRoutes(state.location!.amapCoordinates, candidate),
+        // Battle may compare real travel trade-offs even when transport was not
+        // an explicit retrieval constraint, so finalists always receive transit evidence.
+        route: await contextDataSource.getRoutes(state.location!.amapCoordinates, candidate, { includeTransit: true, cityCode: state.location!.cityCode }),
         weather,
         locationLabel: state.location!.formattedAddress,
       })));
       return { weather, enrichedCandidates };
     },
 
-    finalRank: (state: typeof DebateStateSchema.State) => ({ selectedCandidates: selectDiverseCandidates(finalRankCandidates(state.enrichedCandidates, requirePreference(state), requireExperienceProfile(state))) }),
+    finalRank: (state: typeof DebateStateSchema.State) => {
+      const searchPlan = requireSearchPlan(state);
+      const requirements = deriveRankingRequirements(searchPlan.intentProfile);
+      const eligibleCandidates = applyRouteCandidateRequirements(state.enrichedCandidates, requirements);
+      if (requirements.requireDirectMetro && eligibleCandidates.length === 0) {
+        const routeWasVerifiable = state.enrichedCandidates.some((candidate) => candidate.route?.transit?.status === "available" || candidate.route?.transit?.status === "no_route");
+        throw new Error(routeWasVerifiable ? "没有找到可确认地铁零换乘直达且符合其他要求的地点。" : "暂时无法从高德路线数据验证地铁是否直达，请稍后重试。");
+      }
+      const ranked = finalRankCandidates(eligibleCandidates, requirePreference(state), requireExperienceProfile(state), searchPlan.strictTargetMatch, requirements);
+      return { selectedCandidates: searchPlan.strictTargetMatch ? ranked.slice(0, 3) : selectDiverseCandidates(ranked, 3, searchPlan.strictCategoryMatch ? searchPlan.allowedCategories : undefined) };
+    },
 
     buildFactPacks: (state: typeof DebateStateSchema.State) => {
       const factPacks = createFactPacks(state.selectedCandidates);
@@ -161,7 +264,7 @@ export function createDebateNodes(
     openingRound: async (state: typeof DebateStateSchema.State) => {
       const preference = requirePreference(state);
       const outputs = await Promise.all(
-        state.factPacks.map((place) => createPlaceAgent(place, preference, model, requireIntent(state)).opening()),
+        state.factPacks.map((place) => createPlaceAgent(place, preference, model, requireIntent(state)).opening(buildOpeningComparison(place, state.factPacks))),
       );
       return {
         openingMessages: outputs.map<DebateMessage>((output, index) => ({
@@ -176,19 +279,16 @@ export function createDebateNodes(
 
     attackRound: async (state: typeof DebateStateSchema.State) => {
       const preference = requirePreference(state);
-      const outputs = await Promise.all(
-        state.factPacks.map((place) =>
-          createPlaceAgent(place, preference, model, requireIntent(state)).attack(
-            state.factPacks.filter((competitor) => competitor.id !== place.id),
-            state.openingMessages,
-          ),
-        ),
-      );
+      if (state.factPacks.length !== 3) throw new Error("Battle requires exactly three Place Agents.");
+      const outputs = await Promise.all(planBattlePairings(state.factPacks).map(async ({ speaker, target }) => ({
+        speaker,
+        output: await createPlaceAgent(speaker, preference, model, requireIntent(state)).attack(target, state.openingMessages),
+      })));
       return {
-        attackMessages: outputs.map<DebateMessage>((output, index) => ({
-          id: `attack-${state.factPacks[index].id}-${output.targetPoiId}`,
+        attackMessages: outputs.map<DebateMessage>(({ speaker, output }) => ({
+          id: `attack-${speaker.id}-${output.targetPoiId}`,
           type: "attack",
-          speakerPoiId: state.factPacks[index].id,
+          speakerPoiId: speaker.id,
           targetPoiId: output.targetPoiId,
           claim: output.claim,
           evidenceIds: output.evidenceIds,
@@ -270,7 +370,6 @@ export function createDebateNodes(
     rebuttalRound: async (state: typeof DebateStateSchema.State) => {
       const currentPreference = requirePreference(state);
       const originalPreference = requireOriginalPreference(state);
-      if (!state.preferenceDelta) throw new Error("Preference delta is required after user intervention.");
       const outputs = await Promise.all(
         state.attackMessages.map(async (attack) => {
           const place = state.factPacks.find((candidate) => candidate.id === attack.targetPoiId);
@@ -278,7 +377,7 @@ export function createDebateNodes(
           return {
             attack,
             place,
-            output: await createPlaceAgent(place, currentPreference, model, requireIntent(state)).rebuttal(attack, originalPreference, currentPreference, state.preferenceDelta!),
+            output: await createPlaceAgent(place, currentPreference, model, requireIntent(state)).rebuttal(attack, originalPreference, currentPreference, state.preferenceDelta),
           };
         }),
       );
@@ -295,16 +394,11 @@ export function createDebateNodes(
       };
     },
 
-    moderatorSummary: async (state: typeof DebateStateSchema.State) => ({
-      moderatorResult: await moderateDebate(
-        requireOriginalPreference(state),
-        requirePreference(state),
+    moderatorSummary: (state: typeof DebateStateSchema.State) => ({
+      moderatorResult: buildModeratorResult(
         state.preferenceDelta ?? { interventionText: "", changedFields: [] },
-        state.beforeInterventionScores,
         state.afterInterventionScores,
         state.factPacks,
-        [...state.openingMessages, ...state.attackMessages, ...state.rebuttalMessages],
-        model,
       ),
     }),
   };

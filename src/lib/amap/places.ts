@@ -22,7 +22,14 @@ const AMapResponseSchema = z.object({
     address: z.union([z.string(), z.array(z.unknown())]).optional(),
     distance: z.union([z.string(), z.number()]).optional(),
     children: z.array(z.object({ id: z.string().optional() })).optional(),
-    business: z.object({ rating: z.union([z.string(), z.number()]).optional() }).optional(),
+    photos: z.array(z.object({
+      title: z.string().optional(),
+      url: z.string().optional(),
+    })).optional(),
+    business: z.object({
+      rating: z.union([z.string(), z.number()]).optional(),
+      cost: z.union([z.string(), z.number()]).optional(),
+    }).optional(),
     indoor: z.object({ cpid: z.string().optional() }).optional(),
   })).default([]),
 });
@@ -59,11 +66,11 @@ export async function retrieveNearbyPoisWithMetrics(origin: Coordinates = NANJIN
       key,
       location: `${origin.longitude},${origin.latitude}`,
       radius: String(plan.radiusMeters),
-      types: query.typeCodes,
+      ...(query.typeCodes ? { types: query.typeCodes } : {}),
       ...(query.searchKeyword ? { keywords: query.searchKeyword } : {}),
       page_size: "25",
       page_num: "1",
-      show_fields: "business,children,indoor",
+      show_fields: "business,children,indoor,photos",
     }).toString();
     const response = await fetch(url, { cache: "no-store" });
     if (!response.ok) throw new Error(`AMap ${query.label} POI request failed with HTTP ${response.status}.`);
@@ -77,6 +84,8 @@ export async function retrieveNearbyPoisWithMetrics(origin: Coordinates = NANJIN
     const location = parseLocation(poi.location);
     if (!poi.id || !poi.name || !poi.type || !poi.typecode || !location) continue;
     const rating = toFiniteNumber(poi.business?.rating);
+    const averageCostYuan = toFiniteNumber(poi.business?.cost);
+    const imageUrl = poi.photos?.find((photo) => typeof photo.url === "string" && /^https?:\/\//.test(photo.url))?.url;
     const candidate = {
       id: poi.id,
       name: poi.name,
@@ -88,6 +97,10 @@ export async function retrieveNearbyPoisWithMetrics(origin: Coordinates = NANJIN
       distanceMeters: toFiniteNumber(poi.distance)
         ?? straightLineDistanceMeters(location.longitude, location.latitude, origin),
       ...(rating !== undefined && rating >= 0 && rating <= 5 ? { rating } : {}),
+      // AMap documents `business.cost` as per-capita spend only for selected
+      // POI categories. Missing or zero-like values remain unknown, not free.
+      ...(averageCostYuan !== undefined && averageCostYuan > 0 ? { averageCostYuan } : {}),
+      ...(imageUrl ? { imageUrl } : {}),
       ...(poi.parent ? { parentId: poi.parent } : {}),
       childCount: poi.children?.length ?? 0,
       ...(poi.indoor?.cpid ? { indoorCpid: poi.indoor.cpid } : {}),
