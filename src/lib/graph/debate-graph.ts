@@ -133,7 +133,10 @@ export async function startDebate(
   runtime: DebateRuntime = getServerDebateRuntime(),
 ): Promise<AwaitingIntervention | { status: "candidates_ready"; threadId: string; debate: DebateResult }> {
   const threadId = newThreadId();
-  const output = await runtime.graph.invoke({ originalQuery, gpsCoordinates }, { configurable: { thread_id: threadId } });
+  const output = await runtime.graph.invoke(
+    { originalQuery, gpsCoordinates },
+    { configurable: { thread_id: threadId }, runName: "debate-start", metadata: { query: originalQuery.slice(0, 80) } },
+  );
   if (!isInterrupted(output)) return { status: "candidates_ready", threadId, debate: DebateResultSchema.parse(output) };
   const debate = output as unknown as AwaitingIntervention["debate"];
   return { status: awaitingStatus(output), threadId, debate, interrupt: output.__interrupt__ };
@@ -144,7 +147,10 @@ export async function resumeDebate(
   action: unknown,
   runtime: DebateRuntime = getServerDebateRuntime(),
 ): Promise<{ status: "candidates_ready" | AwaitingIntervention["status"]; debate: DebateResult | unknown }> {
-  const output = await runtime.graph.invoke(new Command({ resume: action }), { configurable: { thread_id: threadId } });
+  const output = await runtime.graph.invoke(
+    new Command({ resume: action }),
+    { configurable: { thread_id: threadId }, runName: "debate-resume", metadata: { threadId } },
+  );
   if (isInterrupted(output)) return { status: awaitingStatus(output), debate: output };
   return { status: "candidates_ready", debate: DebateResultSchema.parse(output) };
 }
