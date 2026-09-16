@@ -11,7 +11,8 @@
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "build:app": "npm --prefix miniapp run build:h5 && rm -rf public/app && mkdir -p public/app && cp -R miniapp/dist/ public/app/"
   },
   "dependencies": {
     "@langchain/core": "1.2.9",

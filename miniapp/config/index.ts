@@ -20,7 +20,9 @@ export default defineConfig(async () => {
       },
     },
     h5: {
-      publicPath: '/',
+      // H5 构建统一部署在 /app 子路径（Vercel 线上与本地 next dev 同构，
+      // webpack-dev-server 也会按 publicPath 挂载开发资源）
+      publicPath: '/app/',
       devServer: {
         // 浏览器预览端口；/api 代理到本机后端，避开 CORS。
         port: 5200,
