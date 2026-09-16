@@ -20,7 +20,7 @@ export interface StructuredModel {
 
 export function createChatModel({
   provider = "deepseek",
-  model = (process.env.DEEPSEEK_MODEL ?? "deepseek-v4-flash") as ChatModelConfig["model"],
+  model = (process.env.DEEPSEEK_MODEL || "deepseek-v4-flash") as ChatModelConfig["model"],
   temperature = 0,
 }: ChatModelConfig = {}): StructuredModel {
   if (provider !== "deepseek") {
