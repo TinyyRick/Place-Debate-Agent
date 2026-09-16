@@ -17,6 +17,7 @@ export async function POST(request: Request) {
     console.error("Debate start failed.", error);
     const controlledMessage = error instanceof Error && (error.message.startsWith("没有找到") || error.message.startsWith("暂时无法从高德路线数据")) ? error.message : undefined;
     const message = controlledMessage ?? (error instanceof Error && error.message.startsWith("Only ") ? "没有足够符合要求的地点，请调整条件后重试。" : "地点推荐暂时无法完成，请稍后重试。");
-    return NextResponse.json({ error: message }, { status: 400 });
+    // detail 帮助在部署环境（Vercel 日志之外）快速定位上游失败原因
+    return NextResponse.json({ error: message, detail: error instanceof Error ? error.message : String(error) }, { status: 400 });
   }
 }
